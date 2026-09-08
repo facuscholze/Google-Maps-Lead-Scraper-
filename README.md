@@ -60,6 +60,10 @@ cp .env.example .env
 #    python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 # 3) optional GOOGLE_MAPS_API_KEY (Places API). Without it the demo runs
 #    fully offline with the mock provider.
+#
+# Sin Postgres/Docker? Cambiá la línea DATABASE_URL del .env a:
+#    DATABASE_URL=sqlite:///./dev.db
+# y sáltate el paso `alembic upgrade head` (las tablas se crean solas en dev).
 
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000

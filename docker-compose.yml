@@ -1,0 +1,60 @@
+# AvaScho Lead Intelligence — full local stack.
+#
+#   docker compose up --build
+#
+# Services: postgres (db), FastAPI backend (:8000), Next.js frontend (:3000).
+# The frontend proxies /api/* to the backend container, so the browser only
+# ever talks to Next.js (same origin — no CORS issues, no secrets in the UI).
+#
+# Backend secrets (SECRET_KEY, ENCRYPTION_KEY, GOOGLE_CLIENT_ID/…, API keys)
+# must live in backend/.env (copy backend/.env.example → backend/.env).
+# docker compose automatically loads that file into the backend container.
+# Without a real Google Maps key the backend runs its offline demo provider.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: avascho
+      POSTGRES_PASSWORD: avascho
+      POSTGRES_DB: avascho
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avascho -d avascho"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      # Point the backend at the compose Postgres (overrides backend/.env default).
+      DATABASE_URL: postgresql+psycopg2://avascho:avascho@db:5432/avascho
+      CORS_ORIGINS: http://localhost:3000
+      FRONTEND_URL: http://localhost:3000
+      EXECUTION_MODE: inline
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    build: ./frontend
+    environment:
+      # Runtime proxy target for the Next rewrites (/api/* → backend).
+      API_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

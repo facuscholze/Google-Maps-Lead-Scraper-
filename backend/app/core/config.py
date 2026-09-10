@@ -69,6 +69,15 @@ class Settings(BaseSettings):
         "http://localhost:8000/api/email-accounts/gmail/callback"
     )
 
+    # --- Google Sheets export ---------------------------------------------------------
+    # Leads can be appended to a spreadsheet with a service account. The key is
+    # stored as a single-line JSON string (never as a file path) and is never
+    # logged or returned by any endpoint.
+    google_sheets_enabled: bool = False
+    google_sheets_service_account_json: str = ""
+    google_sheets_default_spreadsheet_id: str = ""
+    google_sheets_default_sheet_name: str = "Leads"
+
     # --- Email limits ---------------------------------------------------------------
     daily_email_limit: int = 5
     min_send_delay_seconds: int = 90

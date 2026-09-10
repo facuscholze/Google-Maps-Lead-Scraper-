@@ -131,6 +131,30 @@ class LeadListResponse(BaseModel):
     page_size: int
 
 
+class ExportToSheetsRequest(BaseModel):
+    """Body of `POST /leads/export-to-sheets`.
+
+    Filters mirror the ones the leads table uses so the sheet receives exactly
+    what the user is looking at. Missing spreadsheet/sheet fall back to the
+    configured defaults.
+    """
+
+    spreadsheet_id: str | None = None
+    sheet_name: str | None = None
+    selection: Literal["all", "selected", "HOT", "WARM", "READY_TO_CONTACT"] = "all"
+    ids: list[int] | None = None
+    search_id: int | None = None
+    temperature: str | None = None
+    q: str | None = None
+    has_email: bool | None = None
+    min_lead_score: int | None = None
+
+
+class SheetsExportResponse(BaseModel):
+    rows_written: int
+    spreadsheet_url: str
+
+
 # ---------------------------------------------------------------- proposals ---
 class ProposalOut(ORMModel):
     id: int

@@ -10,12 +10,21 @@ import {
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { Download, SearchX } from "lucide-react";
+import { Download, ExternalLink, FileSpreadsheet, Loader2, SearchX } from "lucide-react";
 import { api } from "@/lib/api";
 import type { LeadSummary, Temperature } from "@/lib/types";
 import { Card, EmptyState, ErrorNote, Spinner, StatusChip, TemperatureChip, cn } from "@/components/ui";
 
 const TEMPERATURES: Temperature[] = ["HOT", "WARM", "COLD", "LOW"];
+
+// Debe coincidir con LeadStatus (backend/app/core/enums.py): el filtro manda el
+// valor tal cual y el backend compara `Lead.status == status`.
+const LEAD_STATUSES = ["NEW", "CONTACTED", "REPLIED", "OPTED_OUT", "DO_NOT_CONTACT", "ARCHIVED"];
+
+interface SheetsExportResult {
+  rows_written: number;
+  spreadsheet_url: string;
+}
 
 export default function LeadsPage() {
   return (
@@ -85,7 +94,61 @@ function LeadsPageInner() {
   });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
-  const exportHref = `/api/leads/export?format=csv&${filterParams.toString()}`;
+
+  // ---- export CSV (FIX 5) -------------------------------------------------
+  // El <a> no sirve: /api/leads/export exige `Authorization: Bearer <token>` y
+  // un link común no lo manda. Bajamos el blob con el cliente `api`.
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  async function handleExportCsv() {
+    setIsExporting(true);
+    setExportError(null);
+    let objectUrl: string | null = null;
+    try {
+      // filterParams trae todos los filtros activos SIN page/page_size, así el
+      // CSV incluye la población filtrada completa y no solo la página actual.
+      const blob = await api.getBlob(`/api/leads/export?fmt=csv&${filterParams.toString()}`);
+      objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "avascho_leads.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "No pudimos exportar los leads.");
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setIsExporting(false);
+    }
+  }
+
+  // ---- export a Google Sheets (FIX 7) --------------------------------------
+  const [isSendingToSheets, setIsSendingToSheets] = useState(false);
+  const [sheetsError, setSheetsError] = useState<string | null>(null);
+  const [sheetsResult, setSheetsResult] = useState<SheetsExportResult | null>(null);
+
+  async function handleSendToSheets() {
+    setIsSendingToSheets(true);
+    setSheetsError(null);
+    setSheetsResult(null);
+    try {
+      const result = await api.post<SheetsExportResult>("/api/leads/export-to-sheets", {
+        selection: "all",
+        search_id: searchId ? Number(searchId) : undefined,
+        temperature,
+        q: queryText.trim() || undefined,
+        has_email: hasEmail,
+        min_lead_score: minScore ? Number(minScore) : undefined,
+      });
+      setSheetsResult(result);
+    } catch (e) {
+      setSheetsError(e instanceof Error ? e.message : "No pudimos enviar los leads a Google Sheets.");
+    } finally {
+      setIsSendingToSheets(false);
+    }
+  }
 
   const columns = useMemo<ColumnDef<LeadSummary>[]>(
     () => [
@@ -123,9 +186,30 @@ function LeadsPageInner() {
             value={queryText}
             onChange={(e) => setQueryText(e.target.value)}
           />
-          <a href={exportHref} className="btn-outline" title="Exportar los leads filtrados a CSV">
-            <Download size={15} /> CSV
-          </a>
+          <button
+            type="button"
+            className="btn-outline disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleExportCsv}
+            disabled={isExporting}
+            title="Exportar los leads filtrados a CSV"
+          >
+            {isExporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+            {isExporting ? "Exportando…" : "CSV"}
+          </button>
+          <button
+            type="button"
+            className="btn-outline disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleSendToSheets}
+            disabled={isSendingToSheets}
+            title="Agregar los leads filtrados a la spreadsheet configurada"
+          >
+            {isSendingToSheets ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : (
+              <FileSpreadsheet size={15} />
+            )}
+            {isSendingToSheets ? "Enviando…" : "Enviar a Sheets"}
+          </button>
         </div>
       </div>
 
@@ -171,13 +255,13 @@ function LeadsPageInner() {
           <option value="60">Lead ≥ 60</option>
         </select>
 
-        <select className="input !w-40 !py-1.5 text-xs" value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select className="input !w-44 !py-1.5 text-xs" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Estado: cualquiera</option>
-          <option value="NEW">NEW</option>
-          <option value="CONTACTED">CONTACTED</option>
-          <option value="REPLIED">REPLIED</option>
-          <option value="WON">WON</option>
-          <option value="LOST">LOST</option>
+          {LEAD_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s.replaceAll("_", " ")}
+            </option>
+          ))}
         </select>
 
         {hasActiveFilters && (
@@ -186,6 +270,28 @@ function LeadsPageInner() {
           </button>
         )}
       </div>
+
+      {/* avisos de exportación (CSV / Google Sheets) */}
+      <ErrorNote message={exportError ?? undefined} />
+      <ErrorNote message={sheetsError ?? undefined} />
+      {sheetsResult && (
+        <div className="rounded-xl bg-[#E6F4EA] text-[#1E8E3E] text-sm px-4 py-3 border border-[#B7E1C4] flex flex-wrap items-center gap-2">
+          <FileSpreadsheet size={15} />
+          <span>
+            {sheetsResult.rows_written === 0
+              ? "Ningún lead coincidía con los filtros, no se escribió nada."
+              : `${sheetsResult.rows_written} ${sheetsResult.rows_written === 1 ? "lead enviado" : "leads enviados"} a Google Sheets.`}
+          </span>
+          <a
+            href={sheetsResult.spreadsheet_url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 underline underline-offset-2 font-medium"
+          >
+            Abrir la spreadsheet <ExternalLink size={13} />
+          </a>
+        </div>
+      )}
 
       {isLoading ? (
         <Spinner label="Cargando leads…" />

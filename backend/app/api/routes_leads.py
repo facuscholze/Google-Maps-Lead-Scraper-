@@ -11,12 +11,27 @@ from openpyxl import Workbook
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.database import get_db
+from app.core.logging import log_event
+from app.models.lead import Lead
 from app.models.user import User
 from app.repositories.audits import AuditRepository
 from app.repositories.leads import LeadRepository
-from app.schemas.api import LeadDetail, LeadListResponse, LeadSummary, ProposalOut
+from app.schemas.api import (
+    ExportToSheetsRequest,
+    LeadDetail,
+    LeadListResponse,
+    LeadSummary,
+    ProposalOut,
+    SheetsExportResponse,
+)
 from app.services.emailing.proposal_service import ProposalService
+from app.services.google_sheets_service import (
+    GoogleSheetsError,
+    GoogleSheetsExportService,
+    GoogleSheetsNotConfiguredError,
+)
 from app.services.lead_service import score_lead
 from app.services.website_service import WebsiteAnalysisService
 
@@ -34,6 +49,80 @@ _LEAD_FIELDS = [
 
 def _lead_summary(lead) -> LeadSummary:
     return LeadSummary.model_validate(lead)
+
+
+def _build_lead_filters(
+    *,
+    temperature: str | None = None,
+    min_lead_score: int | None = None,
+    min_opportunity_score: int | None = None,
+    min_website_score: float | None = None,
+    min_reviews: int | None = None,
+    min_rating: float | None = None,
+    has_website: bool | None = None,
+    has_email: bool | None = None,
+    email_confidence: str | None = None,
+    recommended_service: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+) -> dict[str, Any]:
+    """Build the filter dict understood by `LeadRepository._apply_filters`.
+
+    Shared by `GET /leads`, `GET /leads/export` and `POST /leads/export-to-sheets`
+    so every entry point filters the population in exactly the same way.
+    """
+    return {
+        "temperature": temperature.split(",") if temperature else None,
+        "min_lead_score": min_lead_score,
+        "min_opportunity_score": min_opportunity_score,
+        "min_website_score": min_website_score,
+        "min_reviews": min_reviews,
+        "min_rating": min_rating,
+        "has_website": has_website,
+        "has_email": has_email,
+        "email_confidence": email_confidence,
+        "recommended_service": recommended_service,
+        "status": status,
+        "q": q,
+    }
+
+
+def _select_leads_for_export(
+    repo: LeadRepository,
+    workspace_id: int,
+    *,
+    selection: str,
+    ids: list[int] | None = None,
+    filters: dict[str, Any] | None = None,
+    search_id: int | None = None,
+    limit: int = 1000,
+) -> list[Lead]:
+    """Resolve the leads a caller wants exported.
+
+    `selected` honours an explicit id list; the named presets (HOT / WARM /
+    READY_TO_CONTACT) narrow the temperature (and, for READY_TO_CONTACT, the
+    email confidence); anything else exports the filtered population. Filters
+    coming from the query string are always applied on top.
+    """
+    filters = dict(filters or {})
+    if selection == "selected" and ids:
+        leads = []
+        for lid in ids:
+            lead = repo.get_for_workspace(workspace_id, lid)
+            if lead is not None:
+                leads.append(lead)
+        return leads
+    if selection == "HOT":
+        filters["temperature"] = ["HOT"]
+    elif selection == "WARM":
+        filters["temperature"] = ["WARM"]
+    elif selection == "READY_TO_CONTACT":
+        filters["temperature"] = ["HOT", "WARM"]
+        filters["email_confidence"] = "HIGH"
+    leads, _ = repo.list_for_workspace(
+        workspace_id, search_id=search_id, filters=filters, page_size=limit
+    )
+    return leads
 
 
 @router.get("", response_model=LeadListResponse)
@@ -57,20 +146,20 @@ def list_leads(
     q: str | None = None,
     include_unlinked: bool = False,
 ) -> LeadListResponse:
-    filters: dict[str, Any] = {
-        "temperature": temperature.split(",") if temperature else None,
-        "min_lead_score": min_lead_score,
-        "min_opportunity_score": min_opportunity_score,
-        "min_website_score": min_website_score,
-        "min_reviews": min_reviews,
-        "min_rating": min_rating,
-        "has_website": has_website,
-        "has_email": has_email,
-        "email_confidence": email_confidence,
-        "recommended_service": recommended_service,
-        "status": status,
-        "q": q,
-    }
+    filters = _build_lead_filters(
+        temperature=temperature,
+        min_lead_score=min_lead_score,
+        min_opportunity_score=min_opportunity_score,
+        min_website_score=min_website_score,
+        min_reviews=min_reviews,
+        min_rating=min_rating,
+        has_website=has_website,
+        has_email=has_email,
+        email_confidence=email_confidence,
+        recommended_service=recommended_service,
+        status=status,
+        q=q,
+    )
     items, total = LeadRepository(db).list_for_workspace(
         user.workspace_id, search_id=search_id, page=page, page_size=page_size,
         filters=filters, linked_only=not include_unlinked,
@@ -85,29 +174,52 @@ def export_leads(
     fmt: str = Query("csv", pattern="^(csv|xlsx|json)$"),
     selection: str = Query("all", pattern="^(all|selected|HOT|WARM|READY_TO_CONTACT)$"),
     ids: str | None = None,  # comma separated when selection=selected
+    search_id: int | None = None,
+    temperature: str | None = None,
+    min_lead_score: int | None = None,
+    min_opportunity_score: int | None = None,
+    min_website_score: float | None = None,
+    min_reviews: int | None = None,
+    min_rating: float | None = None,
+    has_website: bool | None = None,
+    has_email: bool | None = None,
+    email_confidence: str | None = None,
+    recommended_service: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    repo = LeadRepository(db)
-    if selection == "selected" and ids:
-        selected_ids = [int(x) for x in ids.split(",") if x.strip().isdigit()]
-        leads = [
-            repo.get_for_workspace(user.workspace_id, lid)
-            for lid in selected_ids
-            if repo.get_for_workspace(user.workspace_id, lid) is not None
-        ]
-    elif selection == "HOT":
-        leads, _ = repo.list_for_workspace(user.workspace_id, filters={"temperature": "HOT"}, page_size=1000)
-    elif selection == "WARM":
-        leads, _ = repo.list_for_workspace(user.workspace_id, filters={"temperature": "WARM"}, page_size=1000)
-    elif selection == "READY_TO_CONTACT":
-        leads, _ = repo.list_for_workspace(
-            user.workspace_id,
-            filters={"temperature": ["HOT", "WARM"], "email_confidence": "HIGH"},
-            page_size=1000,
-        )
-    else:
-        leads, _ = repo.list_for_workspace(user.workspace_id, page_size=1000)
+    """Export leads as csv / xlsx / json, honouring the active UI filters.
+
+    `selection` keeps working exactly as before; the optional filters narrow the
+    exported population the same way `GET /leads` does, so what you see in the
+    table is what you download.
+    """
+    selected_ids = (
+        [int(x) for x in ids.split(",") if x.strip().isdigit()] if ids else None
+    )
+    leads = _select_leads_for_export(
+        LeadRepository(db),
+        user.workspace_id,
+        selection=selection,
+        ids=selected_ids,
+        filters=_build_lead_filters(
+            temperature=temperature,
+            min_lead_score=min_lead_score,
+            min_opportunity_score=min_opportunity_score,
+            min_website_score=min_website_score,
+            min_reviews=min_reviews,
+            min_rating=min_rating,
+            has_website=has_website,
+            has_email=has_email,
+            email_confidence=email_confidence,
+            recommended_service=recommended_service,
+            status=status,
+            q=q,
+        ),
+        search_id=search_id,
+    )
 
     rows = [{f: getattr(l, f, None) for f in _LEAD_FIELDS} for l in leads]
     filename = "avascho_leads"
@@ -141,6 +253,80 @@ def export_leads(
         content=buffer.getvalue(),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
+
+
+@router.post("/export-to-sheets", response_model=SheetsExportResponse)
+def export_leads_to_sheets(
+    payload: ExportToSheetsRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SheetsExportResponse:
+    """Append the leads matching the active filters to a Google spreadsheet.
+
+    Uses the service account configured through GOOGLE_SHEETS_*; the key itself
+    never leaves the backend.
+    """
+    if not settings.google_sheets_enabled:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "La integración con Google Sheets no está habilitada. "
+            "Seteá GOOGLE_SHEETS_ENABLED=true en el .env del backend.",
+        )
+
+    spreadsheet_id = (
+        payload.spreadsheet_id or settings.google_sheets_default_spreadsheet_id or ""
+    ).strip()
+    sheet_name = (
+        payload.sheet_name or settings.google_sheets_default_sheet_name or ""
+    ).strip()
+    if not spreadsheet_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "No hay spreadsheet configurada. Indicá GOOGLE_SHEETS_DEFAULT_SPREADSHEET_ID "
+            "en el .env del backend (o mandá spreadsheet_id en la request).",
+        )
+    if not sheet_name:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "No hay hoja configurada. Indicá GOOGLE_SHEETS_DEFAULT_SHEET_NAME en el .env "
+            "del backend (o mandá sheet_name en la request).",
+        )
+
+    leads = _select_leads_for_export(
+        LeadRepository(db),
+        user.workspace_id,
+        selection=payload.selection,
+        ids=payload.ids,
+        filters=_build_lead_filters(
+            temperature=payload.temperature,
+            min_lead_score=payload.min_lead_score,
+            has_email=payload.has_email,
+            q=payload.q,
+        ),
+        search_id=payload.search_id,
+    )
+
+    try:
+        rows_written = GoogleSheetsExportService().append_leads(
+            spreadsheet_id, sheet_name, leads
+        )
+    except GoogleSheetsNotConfiguredError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except GoogleSheetsError as exc:
+        # Upstream failure: nothing to do with the caller's request.
+        log_event(
+            "google_sheets_export_failed",
+            workspace_id=user.workspace_id,
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=sheet_name,
+            leads=len(leads),
+        )
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+    return SheetsExportResponse(
+        rows_written=rows_written,
+        spreadsheet_url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit",
     )
 
 

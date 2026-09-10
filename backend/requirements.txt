@@ -31,6 +31,10 @@ PyJWT==2.10.1
 openpyxl==3.1.5
 pytz==2024.2
 
+# --- Google Sheets export (service account append) -----------------------------
+google-api-python-client==2.200.0
+google-auth==2.57.1
+
 # --- Dev / test ----------------------------------------------------------------
 pytest==8.3.4
 pytest-cov==6.0.0

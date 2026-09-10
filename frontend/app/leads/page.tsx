@@ -10,10 +10,12 @@ import {
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { Download, ExternalLink, FileSpreadsheet, Loader2, SearchX } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2, SearchX } from "lucide-react";
 import { api } from "@/lib/api";
 import type { LeadSummary, Temperature } from "@/lib/types";
 import { Card, EmptyState, ErrorNote, Spinner, StatusChip, TemperatureChip, cn } from "@/components/ui";
+import { SheetsResultNote } from "@/components/sheets-note";
+import { useExportToSheets } from "@/lib/use-export-to-sheets";
 
 const TEMPERATURES: Temperature[] = ["HOT", "WARM", "COLD", "LOW"];
 
@@ -21,10 +23,7 @@ const TEMPERATURES: Temperature[] = ["HOT", "WARM", "COLD", "LOW"];
 // valor tal cual y el backend compara `Lead.status == status`.
 const LEAD_STATUSES = ["NEW", "CONTACTED", "REPLIED", "OPTED_OUT", "DO_NOT_CONTACT", "ARCHIVED"];
 
-interface SheetsExportResult {
-  rows_written: number;
-  spreadsheet_url: string;
-}
+const SHEETS_KEY = "leads";
 
 export default function LeadsPage() {
   return (
@@ -125,29 +124,23 @@ function LeadsPageInner() {
   }
 
   // ---- export a Google Sheets (FIX 7) --------------------------------------
-  const [isSendingToSheets, setIsSendingToSheets] = useState(false);
-  const [sheetsError, setSheetsError] = useState<string | null>(null);
-  const [sheetsResult, setSheetsResult] = useState<SheetsExportResult | null>(null);
+  const {
+    sendToSheets,
+    isSending,
+    error: sheetsError,
+    outcome: sheetsOutcome,
+  } = useExportToSheets();
+  const isSendingToSheets = isSending(SHEETS_KEY);
 
-  async function handleSendToSheets() {
-    setIsSendingToSheets(true);
-    setSheetsError(null);
-    setSheetsResult(null);
-    try {
-      const result = await api.post<SheetsExportResult>("/api/leads/export-to-sheets", {
-        selection: "all",
-        search_id: searchId ? Number(searchId) : undefined,
-        temperature,
-        q: queryText.trim() || undefined,
-        has_email: hasEmail,
-        min_lead_score: minScore ? Number(minScore) : undefined,
-      });
-      setSheetsResult(result);
-    } catch (e) {
-      setSheetsError(e instanceof Error ? e.message : "No pudimos enviar los leads a Google Sheets.");
-    } finally {
-      setIsSendingToSheets(false);
-    }
+  function handleSendToSheets() {
+    sendToSheets(SHEETS_KEY, {
+      selection: "all",
+      search_id: searchId ? Number(searchId) : undefined,
+      temperature,
+      q: queryText.trim() || undefined,
+      has_email: hasEmail,
+      min_lead_score: minScore ? Number(minScore) : undefined,
+    });
   }
 
   const columns = useMemo<ColumnDef<LeadSummary>[]>(
@@ -274,24 +267,7 @@ function LeadsPageInner() {
       {/* avisos de exportación (CSV / Google Sheets) */}
       <ErrorNote message={exportError ?? undefined} />
       <ErrorNote message={sheetsError ?? undefined} />
-      {sheetsResult && (
-        <div className="rounded-xl bg-[#E6F4EA] text-[#1E8E3E] text-sm px-4 py-3 border border-[#B7E1C4] flex flex-wrap items-center gap-2">
-          <FileSpreadsheet size={15} />
-          <span>
-            {sheetsResult.rows_written === 0
-              ? "Ningún lead coincidía con los filtros, no se escribió nada."
-              : `${sheetsResult.rows_written} ${sheetsResult.rows_written === 1 ? "lead enviado" : "leads enviados"} a Google Sheets.`}
-          </span>
-          <a
-            href={sheetsResult.spreadsheet_url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 underline underline-offset-2 font-medium"
-          >
-            Abrir la spreadsheet <ExternalLink size={13} />
-          </a>
-        </div>
-      )}
+      {sheetsOutcome?.key === SHEETS_KEY && <SheetsResultNote outcome={sheetsOutcome} />}
 
       {isLoading ? (
         <Spinner label="Cargando leads…" />

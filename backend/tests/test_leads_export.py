@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -28,6 +29,12 @@ from app.services.google_sheets_service import (
     GoogleSheetsError,
     GoogleSheetsExportService,
     GoogleSheetsNotConfiguredError,
+    SheetsAppendResult,
+    build_generic_tab_name,
+    INVALID_SHEET_NAME_CHARS,
+    build_search_tab_name,
+    sanitize_sheet_name,
+    unique_sheet_name,
 )
 from app.utils.text import utcnow
 
@@ -262,9 +269,11 @@ def test_export_to_sheets_writes_filtered_rows(api, monkeypatch):
     calls: list[tuple] = []
 
     class FakeService:
-        def append_leads(self, spreadsheet_id, sheet_name, leads):
-            calls.append((spreadsheet_id, sheet_name, list(leads)))
-            return len(list(leads))
+        def append_leads_to_new_tab(self, spreadsheet_id, base_name, leads):
+            calls.append((spreadsheet_id, base_name, list(leads)))
+            return SheetsAppendResult(
+                rows_written=len(list(leads)), sheet_name=f"{base_name} (2)", sheet_gid=101
+            )
 
     monkeypatch.setattr("app.api.routes_leads.GoogleSheetsExportService", FakeService)
 
@@ -277,12 +286,75 @@ def test_export_to_sheets_writes_filtered_rows(api, monkeypatch):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["rows_written"] == 1
+    # la pestaña se nombra con la query de la búsqueda + su fecha
+    assert re.match(
+        rf"^{re.escape(api.search.query)} - \d{{2}}-\d{{2}}-\d{{4}}$", calls[0][1]
+    ), calls[0][1]
+    assert body["sheet_name"] == f"{calls[0][1]} (2)"
+    # el link lleva al gid de la pestaña creada
     assert body["spreadsheet_url"] == (
-        "https://docs.google.com/spreadsheets/d/SHEET-ID-123/edit"
+        "https://docs.google.com/spreadsheets/d/SHEET-ID-123/edit#gid=101"
     )
     assert calls[0][0] == "SHEET-ID-123"
-    assert calls[0][1] == "Leads"
     assert [lead.business_name for lead in calls[0][2]] == ["Clínica Aurora"]
+
+
+def test_export_to_sheets_without_search_uses_generic_tab(api, monkeypatch):
+    monkeypatch.setattr(settings, "google_sheets_enabled", True)
+    monkeypatch.setattr(settings, "google_sheets_default_spreadsheet_id", "SHEET-ID-123")
+    monkeypatch.setattr(settings, "google_sheets_default_sheet_name", "Leads")
+
+    calls: list[str] = []
+
+    class FakeService:
+        def append_leads_to_new_tab(self, spreadsheet_id, base_name, leads):
+            calls.append(base_name)
+            return SheetsAppendResult(len(list(leads)), base_name, 7)
+
+    monkeypatch.setattr("app.api.routes_leads.GoogleSheetsExportService", FakeService)
+
+    r = api.client.post("/api/leads/export-to-sheets", json={}, headers=api.headers)
+    assert r.status_code == 200, r.text
+    assert re.match(r"^Leads \d{2}-\d{2}-\d{4} \d{2}\.\d{2}$", calls[0]), calls[0]
+    assert r.json()["sheet_name"] == calls[0]
+
+
+def test_export_to_sheets_honours_explicit_sheet_name(api, monkeypatch):
+    """Un sheet_name explícito sigue anexando a esa pestaña (compat)."""
+    monkeypatch.setattr(settings, "google_sheets_enabled", True)
+    monkeypatch.setattr(settings, "google_sheets_default_spreadsheet_id", "SHEET-ID-123")
+
+    calls: list[tuple] = []
+
+    class FakeService:
+        def append_leads(self, spreadsheet_id, sheet_name, leads):
+            calls.append((spreadsheet_id, sheet_name))
+            return len(list(leads))
+
+        def append_leads_to_new_tab(self, *a, **kw):  # pragma: no cover
+            raise AssertionError("no debería crear una pestaña nueva")
+
+    monkeypatch.setattr("app.api.routes_leads.GoogleSheetsExportService", FakeService)
+
+    r = api.client.post(
+        "/api/leads/export-to-sheets", json={"sheet_name": "Prospectos 2026"},
+        headers=api.headers,
+    )
+    assert r.status_code == 200, r.text
+    assert calls == [("SHEET-ID-123", "Prospectos 2026")]
+    assert r.json()["sheet_name"] == "Prospectos 2026"
+    assert r.json()["spreadsheet_url"].endswith("/edit")  # sin gid
+
+
+def test_export_to_sheets_unknown_search_is_400(api, monkeypatch):
+    monkeypatch.setattr(settings, "google_sheets_enabled", True)
+    monkeypatch.setattr(settings, "google_sheets_default_spreadsheet_id", "SHEET-ID-123")
+
+    r = api.client.post(
+        "/api/leads/export-to-sheets", json={"search_id": 99999}, headers=api.headers
+    )
+    assert r.status_code == 400
+    assert "no existe" in r.json()["detail"]
 
 
 def test_export_to_sheets_upstream_error_is_502(api, monkeypatch):
@@ -292,6 +364,9 @@ def test_export_to_sheets_upstream_error_is_502(api, monkeypatch):
 
     class BrokenService:
         def append_leads(self, spreadsheet_id, sheet_name, leads):
+            raise GoogleSheetsError("Google rechazó el acceso a la spreadsheet (403).")
+
+        def append_leads_to_new_tab(self, spreadsheet_id, base_name, leads):
             raise GoogleSheetsError("Google rechazó el acceso a la spreadsheet (403).")
 
     monkeypatch.setattr("app.api.routes_leads.GoogleSheetsExportService", BrokenService)
@@ -349,15 +424,47 @@ class FakeValues:
 
 
 class FakeSheets:
-    def __init__(self, existing: list[list[str]] | None = None) -> None:
+    def __init__(
+        self,
+        existing: list[list[str]] | None = None,
+        tabs: list[str] | None = None,
+    ) -> None:
         self.sink: dict = {}
         self._values = FakeValues(existing or [], self.sink)
+        self.tabs: list[str] = list(tabs or [])  # pestañas ya existentes
+        self.created: list[str] = []  # pestañas creadas en este test
 
     def spreadsheets(self):
         return self
 
     def values(self):
         return self._values
+
+    def get(self, spreadsheetId, fields=None):  # noqa: N803
+        outer = self
+
+        class _Req:
+            def execute(self_inner):
+                return {"sheets": [{"properties": {"title": t}} for t in outer.tabs]}
+
+        return _Req()
+
+    def batchUpdate(self, spreadsheetId, body):  # noqa: N803
+        outer = self
+
+        class _Req:
+            def execute(self_inner):
+                title = body["requests"][0]["addSheet"]["properties"]["title"]
+                outer.tabs.append(title)
+                outer.created.append(title)
+                gid = 100 + len(outer.created)
+                return {
+                    "replies": [
+                        {"addSheet": {"properties": {"sheetId": gid, "title": title}}}
+                    ]
+                }
+
+        return _Req()
 
 
 def _service_with(fake: FakeSheets) -> GoogleSheetsExportService:
@@ -474,3 +581,110 @@ def test_service_maps_http_errors(status_code, expected):
     with pytest.raises(GoogleSheetsError) as excinfo:
         service.append_leads("SHEET-ID", "Leads", [_lead_stub()])
     assert expected in str(excinfo.value).upper() or expected in str(excinfo.value)
+
+
+# ---------------------------------------------------------- tab naming ------
+def test_sanitize_sheet_name_replaces_invalid_chars():
+    assert sanitize_sheet_name('Spa: [test]/a\\b?c*d') == "Spa test a b c d"
+    # comillas simples al borde y espacios de más
+    assert sanitize_sheet_name("  ''Clínica   Aurora''  ") == "Clínica Aurora"
+    assert sanitize_sheet_name("") == ""
+    assert sanitize_sheet_name(None) == ""
+    assert sanitize_sheet_name("::::") == ""
+
+
+def test_sanitize_sheet_name_caps_at_100_chars():
+    name = sanitize_sheet_name("Restaurante " * 30)
+    assert len(name) <= 100
+    assert name.startswith("Restaurante")
+
+
+def test_unique_sheet_name_adds_incremental_suffix():
+    base = "Restaurante, Montevideo, Uruguay - 09-09-2026"
+    assert unique_sheet_name(base, []) == base
+    assert unique_sheet_name(base, [base]) == f"{base} (2)"
+    assert unique_sheet_name(base, [base, f"{base} (2)"]) == f"{base} (3)"
+    # el sufijo entra dentro del límite de 100 caracteres
+    long_base = "X" * 100
+    candidate = unique_sheet_name(long_base, [long_base])
+    assert candidate.endswith("(2)")
+    assert len(candidate) <= 100
+
+
+def test_build_search_tab_name_format():
+    from datetime import datetime, timezone
+
+    when = datetime(2026, 9, 9, 18, 30, tzinfo=timezone.utc)
+    name = build_search_tab_name("Restaurante, Montevideo, Uruguay", when)
+    assert re.match(r"^Restaurante, Montevideo, Uruguay - \d{2}-\d{2}-\d{4}$", name), name
+    # sin query utilizable cae al nombre genérico con fecha
+    assert re.match(r"^Leads \d{2}-\d{2}-\d{4}$", build_search_tab_name("::", when))
+    assert re.match(r"^Leads \d{2}-\d{2}-\d{4}$", build_search_tab_name(None, when))
+
+
+def test_build_generic_tab_name_uses_configured_base():
+    assert re.match(r"^Prospectos \d{2}-\d{2}-\d{4} \d{2}\.\d{2}$", build_generic_tab_name("Prospectos"))
+    assert re.match(r"^Leads \d{2}-\d{2}-\d{4} \d{2}\.\d{2}$", build_generic_tab_name(""))
+    # ningún carácter inválido para una pestaña de Sheets puede sobrevivir
+    for invalid in INVALID_SHEET_NAME_CHARS:
+        assert invalid not in build_generic_tab_name("Prospectos")
+
+
+# ------------------------------------- GoogleSheetsExportService: new tab ---
+def test_append_leads_to_new_tab_creates_tab_with_headers_and_gid():
+    fake = FakeSheets(tabs=["Leads"])
+    service = _service_with(fake)
+
+    result = service.append_leads_to_new_tab(
+        "SHEET-ID", "Restaurante, Montevideo, Uruguay - 09-09-2026", [_lead_stub()]
+    )
+
+    assert result.rows_written == 1
+    assert result.sheet_name == "Restaurante, Montevideo, Uruguay - 09-09-2026"
+    assert result.sheet_gid == 101
+    assert fake.created == ["Restaurante, Montevideo, Uruguay - 09-09-2026"]
+    values = fake.sink["append"]["values"]
+    assert values[0] == list(SHEET_COLUMNS)  # pestaña nueva → headers
+    assert fake.sink["append"]["range"] == "Restaurante, Montevideo, Uruguay - 09-09-2026!A1"
+
+
+def test_append_leads_to_new_tab_avoids_name_collision():
+    base = "Clínicas estéticas, Montevideo - 09-09-2026"
+    fake = FakeSheets(tabs=[base])
+    service = _service_with(fake)
+
+    result = service.append_leads_to_new_tab("SHEET-ID", base, [_lead_stub()])
+
+    assert result.sheet_name == f"{base} (2)"
+    assert fake.created == [f"{base} (2)"]
+
+
+def test_append_leads_to_new_tab_sanitizes_the_requested_name():
+    fake = FakeSheets()
+    service = _service_with(fake)
+
+    result = service.append_leads_to_new_tab("SHEET-ID", "Spa: [Ceniza]/Montevideo", [_lead_stub()])
+
+    assert result.sheet_name == "Spa Ceniza Montevideo"
+
+
+def test_append_leads_to_new_tab_without_leads_creates_nothing():
+    fake = FakeSheets()
+    result = _service_with(fake).append_leads_to_new_tab("SHEET-ID", "base", [])
+
+    assert result.rows_written == 0
+    assert result.sheet_name is None
+    assert fake.created == []
+    assert fake.sink == {}
+
+
+def test_append_leads_to_new_tab_maps_http_errors():
+    from googleapiclient.errors import HttpError
+
+    class Boom(FakeSheets):
+        def get(self, spreadsheetId, fields=None):  # noqa: N803
+            raise HttpError(Mock(status=404), b'{"error":{}}')
+
+    with pytest.raises(GoogleSheetsError) as excinfo:
+        _service_with(Boom()).append_leads_to_new_tab("SHEET-ID", "base", [_lead_stub()])
+    assert "404" in str(excinfo.value)

@@ -152,6 +152,8 @@ class ExportToSheetsRequest(BaseModel):
 
 class SheetsExportResponse(BaseModel):
     rows_written: int
+    # Name of the tab that received the rows (None when nothing was written).
+    sheet_name: str | None = None
     spreadsheet_url: str
 
 

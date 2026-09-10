@@ -18,6 +18,7 @@ from app.models.lead import Lead
 from app.models.user import User
 from app.repositories.audits import AuditRepository
 from app.repositories.leads import LeadRepository
+from app.repositories.searches import SearchRepository
 from app.schemas.api import (
     ExportToSheetsRequest,
     LeadDetail,
@@ -31,6 +32,8 @@ from app.services.google_sheets_service import (
     GoogleSheetsError,
     GoogleSheetsExportService,
     GoogleSheetsNotConfiguredError,
+    build_generic_tab_name,
+    build_search_tab_name,
 )
 from app.services.lead_service import score_lead
 from app.services.website_service import WebsiteAnalysisService
@@ -266,6 +269,10 @@ def export_leads_to_sheets(
 
     Uses the service account configured through GOOGLE_SHEETS_*; the key itself
     never leaves the backend.
+
+    A new tab is created per export, named after the search it comes from
+    ("<query> - dd-mm-yyyy") so the history stays readable; pass an explicit
+    `sheet_name` to append to an existing tab instead.
     """
     if not settings.google_sheets_enabled:
         raise HTTPException(
@@ -277,21 +284,24 @@ def export_leads_to_sheets(
     spreadsheet_id = (
         payload.spreadsheet_id or settings.google_sheets_default_spreadsheet_id or ""
     ).strip()
-    sheet_name = (
-        payload.sheet_name or settings.google_sheets_default_sheet_name or ""
-    ).strip()
     if not spreadsheet_id:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "No hay spreadsheet configurada. Indicá GOOGLE_SHEETS_DEFAULT_SPREADSHEET_ID "
             "en el .env del backend (o mandá spreadsheet_id en la request).",
         )
-    if not sheet_name:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "No hay hoja configurada. Indicá GOOGLE_SHEETS_DEFAULT_SHEET_NAME en el .env "
-            "del backend (o mandá sheet_name en la request).",
-        )
+
+    # An explicit sheet_name is honoured as-is; otherwise a new tab is created
+    # and named after the search the export comes from.
+    explicit_sheet_name = (payload.sheet_name or "").strip()
+    search = None
+    if payload.search_id is not None:
+        search = SearchRepository(db).get_for_workspace(user.workspace_id, payload.search_id)
+        if search is None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"La búsqueda {payload.search_id} no existe en este workspace.",
+            )
 
     leads = _select_leads_for_export(
         LeadRepository(db),
@@ -307,10 +317,22 @@ def export_leads_to_sheets(
         search_id=payload.search_id,
     )
 
+    service = GoogleSheetsExportService()
     try:
-        rows_written = GoogleSheetsExportService().append_leads(
-            spreadsheet_id, sheet_name, leads
-        )
+        if explicit_sheet_name:
+            rows_written = service.append_leads(spreadsheet_id, explicit_sheet_name, leads)
+            sheet_name, sheet_gid = explicit_sheet_name, None
+        else:
+            if search is not None:
+                base_name = build_search_tab_name(search.query, search.created_at)
+            else:
+                base_name = build_generic_tab_name(settings.google_sheets_default_sheet_name)
+            result = service.append_leads_to_new_tab(spreadsheet_id, base_name, leads)
+            rows_written, sheet_name, sheet_gid = (
+                result.rows_written,
+                result.sheet_name,
+                result.sheet_gid,
+            )
     except GoogleSheetsNotConfiguredError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except GoogleSheetsError as exc:
@@ -319,14 +341,18 @@ def export_leads_to_sheets(
             "google_sheets_export_failed",
             workspace_id=user.workspace_id,
             spreadsheet_id=spreadsheet_id,
-            sheet_name=sheet_name,
+            sheet_name=explicit_sheet_name or (search.query if search else None),
             leads=len(leads),
         )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
+    spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+    if sheet_gid is not None:
+        spreadsheet_url = f"{spreadsheet_url}#gid={sheet_gid}"
     return SheetsExportResponse(
         rows_written=rows_written,
-        spreadsheet_url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit",
+        sheet_name=sheet_name,
+        spreadsheet_url=spreadsheet_url,
     )
 
 

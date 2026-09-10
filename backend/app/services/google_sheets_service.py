@@ -16,7 +16,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Iterable, Sequence
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.logging import log_event
@@ -56,6 +60,104 @@ class GoogleSheetsError(Exception):
 
 class GoogleSheetsNotConfiguredError(GoogleSheetsError):
     """The service account JSON is missing/unusable in the environment."""
+
+
+# --------------------------------------------------------------- tab names ---
+# Google Sheets rejects these characters in a tab title, caps titles at 100
+# characters and dislikes leading/trailing apostrophes.
+INVALID_SHEET_NAME_CHARS = ":\\/?*[]"
+MAX_SHEET_NAME_LEN = 100
+DEFAULT_TAB_BASE = "Leads"
+
+_WS_RE = re.compile(r"\s+")
+
+
+def _local_now() -> datetime:
+    """Current time in the timezone configured for the app (UTC fallback)."""
+    try:
+        tz = ZoneInfo(settings.default_timezone)
+    except Exception:  # noqa: BLE001 - unknown tz name in the environment
+        tz = timezone.utc
+    return datetime.now(tz)
+
+
+def _to_local(moment: datetime) -> datetime:
+    """Render `moment` in the app timezone.
+
+    SQLite hands back naive datetimes for `DateTime(timezone=True)` columns and
+    they are stored in UTC, so a naive value is assumed to be UTC.
+    """
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    try:
+        tz = ZoneInfo(settings.default_timezone)
+    except Exception:  # noqa: BLE001
+        tz = timezone.utc
+    return moment.astimezone(tz)
+
+
+def sanitize_sheet_name(name: str | None, *, max_length: int = MAX_SHEET_NAME_LEN) -> str:
+    """Make `name` usable as a Google Sheets tab title.
+
+    Invalid characters become spaces, runs of whitespace collapse, surrounding
+    apostrophes/whitespace are dropped and the result is capped at 100 chars.
+    Returns "" when nothing usable is left (the caller picks a fallback).
+    """
+    if not name:
+        return ""
+    cleaned = "".join(
+        " " if char in INVALID_SHEET_NAME_CHARS else char for char in str(name)
+    )
+    cleaned = _WS_RE.sub(" ", cleaned).strip()
+    cleaned = cleaned[:max_length].rstrip()
+    return cleaned.strip("'").strip()
+
+
+def unique_sheet_name(
+    base: str, existing: Iterable[str], *, max_length: int = MAX_SHEET_NAME_LEN
+) -> str:
+    """`base`, or `base (2)` / `base (3)`… when that tab name is already taken."""
+    taken = set(existing)
+    candidate = base[:max_length]
+    if candidate not in taken:
+        return candidate
+    for index in range(2, 1000):
+        suffix = f" ({index})"
+        candidate = base[: max_length - len(suffix)].rstrip() + suffix
+        if candidate not in taken:
+            return candidate
+    raise GoogleSheetsError(
+        f"No se pudo generar un nombre de pestaña único a partir de «{base}»."
+    )
+
+
+def build_search_tab_name(query: str | None, when: datetime | None = None) -> str:
+    """Tab name for an export tied to a search: "<query> - dd-mm-yyyy"."""
+    date_part = _to_local(when).strftime("%d-%m-%Y") if when else _local_now().strftime("%d-%m-%Y")
+    base = sanitize_sheet_name(query)
+    return sanitize_sheet_name(f"{base} - {date_part}" if base else f"{DEFAULT_TAB_BASE} {date_part}")
+
+
+def build_generic_tab_name(
+    base: str | None = None, when: datetime | None = None
+) -> str:
+    """Fallback tab name when the export is not tied to a search.
+
+    The time uses "." instead of ":" because a colon is not allowed in a
+    Google Sheets tab title (it would be sanitized away).
+    """
+    moment = _to_local(when) if when else _local_now()
+    prefix = sanitize_sheet_name(base) or DEFAULT_TAB_BASE
+    return sanitize_sheet_name(f"{prefix} {moment.strftime('%d-%m-%Y %H.%M')}")
+
+
+@dataclass(frozen=True)
+class SheetsAppendResult:
+    """What an export wrote, and where."""
+
+    rows_written: int
+    sheet_name: str | None
+    sheet_gid: int | None = None
 
 
 class GoogleSheetsExportService:
@@ -167,15 +269,13 @@ class GoogleSheetsExportService:
         rows = [self._lead_row(lead) for lead in lead_list]
         service = self._client()
         try:
-            if self._sheet_is_empty(service, spreadsheet_id, sheet_name):
-                rows.insert(0, list(SHEET_COLUMNS))
-            service.spreadsheets().values().append(
-                spreadsheetId=spreadsheet_id,
-                range=f"{sheet_name}!A1",
-                valueInputOption="RAW",
-                insertDataOption="INSERT_ROWS",
-                body={"values": rows},
-            ).execute()
+            self._write_rows(
+                service,
+                spreadsheet_id,
+                sheet_name,
+                rows,
+                include_header=self._sheet_is_empty(service, spreadsheet_id, sheet_name),
+            )
         except Exception as exc:  # noqa: BLE001 - translated below
             raise self._translate_error(exc) from exc
 
@@ -186,6 +286,107 @@ class GoogleSheetsExportService:
             rows=len(lead_list),
         )
         return len(lead_list)
+
+    def append_leads_to_new_tab(
+        self,
+        spreadsheet_id: str,
+        base_name: str,
+        leads: Sequence[Lead] | Iterable[Lead],
+    ) -> SheetsAppendResult:
+        """Create a tab named after `base_name` and write `leads` into it.
+
+        The tab name is sanitized, made unique against the existing tabs and
+        capped at 100 characters. Nothing is created when there are no leads,
+        so an empty filter never leaves an orphan tab behind.
+        """
+        if not spreadsheet_id:
+            raise GoogleSheetsError("No se indicó ningún spreadsheet_id.")
+
+        lead_list = list(leads)
+        if not lead_list:
+            log_event(
+                "google_sheets_append_skipped",
+                spreadsheet_id=spreadsheet_id,
+                base_name=base_name,
+                rows=0,
+            )
+            return SheetsAppendResult(rows_written=0, sheet_name=None, sheet_gid=None)
+
+        service = self._client()
+        try:
+            sheet_name, sheet_gid = self.create_tab(service, spreadsheet_id, base_name)
+            self._write_rows(
+                service,
+                spreadsheet_id,
+                sheet_name,
+                [self._lead_row(lead) for lead in lead_list],
+                include_header=True,  # a brand new tab is always empty
+            )
+        except Exception as exc:  # noqa: BLE001 - translated below
+            raise self._translate_error(exc) from exc
+
+        log_event(
+            "google_sheets_append_ok",
+            spreadsheet_id=spreadsheet_id,
+            sheet_name=sheet_name,
+            rows=len(lead_list),
+        )
+        return SheetsAppendResult(
+            rows_written=len(lead_list), sheet_name=sheet_name, sheet_gid=sheet_gid
+        )
+
+    # ------------------------------------------------------------- tabs ------
+    @staticmethod
+    def create_tab(service: Any, spreadsheet_id: str, base_name: str) -> tuple[str, int | None]:
+        """Add a tab with a unique, sanitized name; returns (title, gid)."""
+        existing = GoogleSheetsExportService._existing_sheet_titles(service, spreadsheet_id)
+        title = unique_sheet_name(
+            sanitize_sheet_name(base_name) or DEFAULT_TAB_BASE, existing
+        )
+        response = (
+            service.spreadsheets()
+            .batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": title}}}]},
+            )
+            .execute()
+        )
+        sheet_gid: int | None = None
+        try:
+            sheet_gid = int(response["replies"][0]["addSheet"]["properties"]["sheetId"])
+        except (KeyError, IndexError, TypeError, ValueError):
+            sheet_gid = None  # the gid only feeds the deep link; never fatal
+        return title, sheet_gid
+
+    @staticmethod
+    def _existing_sheet_titles(service: Any, spreadsheet_id: str) -> list[str]:
+        response = (
+            service.spreadsheets()
+            .get(spreadsheetId=spreadsheet_id, fields="sheets.properties.title")
+            .execute()
+        )
+        return [
+            (sheet.get("properties") or {}).get("title", "")
+            for sheet in response.get("sheets", [])
+        ]
+
+    @staticmethod
+    def _write_rows(
+        service: Any,
+        spreadsheet_id: str,
+        sheet_name: str,
+        rows: list[list[Any]],
+        *,
+        include_header: bool,
+    ) -> None:
+        values = [list(SHEET_COLUMNS), *rows] if include_header else rows
+        service.spreadsheets().values().append(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!A1",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": values},
+        ).execute()
 
     @staticmethod
     def _sheet_is_empty(service: Any, spreadsheet_id: str, sheet_name: str) -> bool:

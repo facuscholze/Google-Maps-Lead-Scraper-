@@ -67,11 +67,10 @@ class OpenAICompatibleProvider(RuleBasedProvider):
             payload = self._chat_json(PROPOSAL_SYSTEM, json.dumps(context, ensure_ascii=False)[:12000])
             result = AIProposal.model_validate(payload)
             # Always render our own brand HTML so the visual identity stays consistent.
-            from app.services.emailing.email_html import render_proposal_email
+            from app.services.emailing.email_html import render_plain_text, render_proposal_email
 
             content = {
                 "business_name": context.get("business_name"),
-                "website_score": context.get("website_score"),
                 "opening": result.opening,
                 "personalized_observation": result.personalized_observation,
                 "strengths": result.strengths,
@@ -80,8 +79,13 @@ class OpenAICompatibleProvider(RuleBasedProvider):
                 "recommended_solution": result.recommended_solution,
                 "call_to_action": result.call_to_action,
                 "signature": result.signature,
+                # datos reales del lead (mismos que el writer rule-based)
+                "reviews": context.get("reviews") or None,
+                "rating": context.get("rating"),
+                "website_score": context.get("website_score"),
             }
             result.html = render_proposal_email(content)
+            result.plain_text = render_plain_text(content)
             return result
         except Exception as exc:  # noqa: BLE001
             logger.warning("LLM generate_proposal failed (%s) -> rule-based fallback", exc)

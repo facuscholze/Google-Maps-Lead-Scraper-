@@ -10,6 +10,10 @@ RUN npm ci
 FROM node:22-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# next.config.mjs reads API_URL at BUILD time (rewrites are baked into the
+# standalone output), so it must be a build arg, not only a runtime env.
+ARG API_URL=http://backend:8000
+ENV API_URL=$API_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

@@ -7,6 +7,8 @@ import { useParams } from "next/navigation";
 import {
   Check,
   Clock,
+  Copy,
+  Download,
   Eye,
   FileText,
   MessageSquare,
@@ -41,6 +43,7 @@ export default function ProposalDetailPage() {
   const [solution, setSolution] = useState("");
   const [cta, setCta] = useState("");
   const [signature, setSignature] = useState("");
+  const [copiedLabel, setCopiedLabel] = useState<string | undefined>();
 
   const { data: proposal, isLoading, isError, refetch } = useQuery<ProposalSummary>({
     queryKey: ["proposal", id],
@@ -106,6 +109,55 @@ export default function ProposalDetailPage() {
     });
     setEditing(false);
   }, "Email encolado correctamente.");
+
+  // ---- copiar / descargar el mail (diseño innblock tal como se envía) ------
+  const flashCopied = (label: string) => {
+    setCopiedLabel(label);
+    setTimeout(() => setCopiedLabel(undefined), 2000);
+  };
+  const copyText = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      flashCopied(label);
+    } catch {
+      setError("No pudimos copiar al portapapeles. Probá de nuevo o copiá a mano.");
+    }
+  };
+  const copyForGmail = async () => {
+    const html = proposal?.body_html ?? "";
+    const plain = proposal?.body_plain ?? "";
+    try {
+      // Pegado en Gmail se ve el diseño (HTML); si el navegador no soporta ClipboardItem, va el texto plano.
+      if (typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([plain], { type: "text/plain" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(plain);
+      }
+      flashCopied("Copiado: pegalo en el cuerpo del mail de Gmail");
+    } catch {
+      setError("No pudimos copiar al portapapeles. Usá «Descargar .html» como alternativa.");
+    }
+  };
+  const downloadHtml = () => {
+    const blob = new Blob([proposal?.body_html ?? ""], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const slug = (proposal?.lead_name ?? `lead-${proposal?.lead_id ?? id}`)
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    a.href = url;
+    a.download = `mail-${slug || id}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (isLoading) return <Spinner label="Cargando propuesta…" />;
   if (isError || !proposal) return <ErrorNote message="No encontramos esta propuesta." />;
@@ -191,7 +243,7 @@ export default function ProposalDetailPage() {
             <textarea className="input min-h-[60px]" value={cta} onChange={(e) => setCta(e.target.value)} />
           </div>
           <div>
-            <label className="label">Firma</label>
+            <label className="label">Firma (texto plano; el HTML usa la firma de socios de la marca)</label>
             <textarea className="input min-h-[60px]" value={signature} onChange={(e) => setSignature(e.target.value)} />
           </div>
           <div className="flex justify-end gap-2">
@@ -201,6 +253,23 @@ export default function ProposalDetailPage() {
         </Card>
       ) : (
         <>
+          {/* Copiar / descargar */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={() => copyText(proposal.subject ?? "", "Asunto copiado")}>
+              <Copy size={14} /> Copiar asunto
+            </Button>
+            <Button variant="outline" onClick={copyForGmail}>
+              <Copy size={14} /> Copiar para Gmail
+            </Button>
+            <Button variant="outline" onClick={() => copyText(proposal.body_html ?? "", "HTML copiado")}>
+              <FileText size={14} /> Copiar HTML
+            </Button>
+            <Button variant="outline" onClick={downloadHtml}>
+              <Download size={14} /> Descargar .html
+            </Button>
+            {copiedLabel && <span className="text-xs text-[#1E8E3E]">{copiedLabel}</span>}
+          </div>
+
           {/* Tabs */}
           <div className="flex flex-wrap items-center gap-1 bg-white/70 rounded-full p-1 border border-sandline w-fit">
             {([

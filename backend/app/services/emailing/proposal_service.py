@@ -149,8 +149,10 @@ class ProposalService:
 
     @staticmethod
     def _content_for_render(proposal: Proposal) -> dict[str, Any]:
+        """Campos editables + datos reales del lead, para re-renderizar el mail."""
+        lead = proposal.lead
         return {
-            "business_name": proposal.lead.business_name if proposal.lead else "",
+            "business_name": lead.business_name if lead else "",
             "opening": proposal.opening or "",
             "personalized_observation": proposal.personalized_observation or "",
             "strengths": proposal.strengths_json or [],
@@ -158,6 +160,9 @@ class ProposalService:
             "recommended_solution": proposal.recommended_solution or "",
             "call_to_action": proposal.call_to_action or "",
             "signature": proposal.signature or "",
+            "reviews": lead.reviews_count if lead else None,
+            "rating": lead.rating if lead else None,
+            "website_score": lead.website_score if lead else None,
         }
 
     def approve(self, proposal: Proposal, user_id: int | None = None) -> Proposal:

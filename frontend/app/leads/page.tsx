@@ -12,16 +12,11 @@ import {
 } from "@tanstack/react-table";
 import { Download, FileSpreadsheet, Loader2, SearchX } from "lucide-react";
 import { api } from "@/lib/api";
-import type { LeadSummary, Temperature } from "@/lib/types";
+import type { LeadSummary } from "@/lib/types";
 import { Card, EmptyState, ErrorNote, Spinner, StatusChip, TemperatureChip, cn } from "@/components/ui";
 import { SheetsResultNote } from "@/components/sheets-note";
+import { LeadFilters } from "@/components/lead-filters";
 import { useExportToSheets } from "@/lib/use-export-to-sheets";
-
-const TEMPERATURES: Temperature[] = ["HOT", "WARM", "COLD", "LOW"];
-
-// Debe coincidir con LeadStatus (backend/app/core/enums.py): el filtro manda el
-// valor tal cual y el backend compara `Lead.status == status`.
-const LEAD_STATUSES = ["NEW", "CONTACTED", "REPLIED", "OPTED_OUT", "DO_NOT_CONTACT", "ARCHIVED"];
 
 const SHEETS_KEY = "leads";
 
@@ -44,9 +39,6 @@ function LeadsPageInner() {
   const [minScore, setMinScore] = useState<string>("");
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(0); // 0-indexed
-
-  const hasActiveFilters =
-    !!temperature || hasEmail !== undefined || hasWebsite !== undefined || !!status || !!minScore || !!queryText.trim();
 
   function clearFilters() {
     setTemperature(undefined);
@@ -206,63 +198,16 @@ function LeadsPageInner() {
         </div>
       </div>
 
-      {/* quick filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button className={cn("chip border", !temperature ? "border-ink text-ink" : "border-transparent bg-white text-taupe")} onClick={() => { setTemperature(undefined); }}>
-          Todos
-        </button>
-        {TEMPERATURES.map((t) => (
-          <button
-            key={t}
-            className={cn("chip border", temperature === t ? chipActive(t) : "border-transparent bg-white text-taupe")}
-            onClick={() => setTemperature(temperature === t ? undefined : t)}
-          >
-            {t}
-          </button>
-        ))}
-
-        <div className="h-5 w-px bg-sandline mx-1" />
-
-        <TriStateFilter
-          label="Email"
-          value={hasEmail}
-          onChange={setHasEmail}
-          trueLabel="con email"
-          falseLabel="sin email"
-        />
-
-        <TriStateFilter
-          label="Web"
-          value={hasWebsite}
-          onChange={setHasWebsite}
-          trueLabel="con web"
-          falseLabel="sin web"
-        />
-
-        <div className="h-5 w-px bg-sandline mx-1" />
-
-        <select className="input !w-44 !py-1.5 text-xs" value={minScore} onChange={(e) => setMinScore(e.target.value)}>
-          <option value="">Lead score: cualquiera</option>
-          <option value="80">Lead ≥ 80</option>
-          <option value="70">Lead ≥ 70</option>
-          <option value="60">Lead ≥ 60</option>
-        </select>
-
-        <select className="input !w-44 !py-1.5 text-xs" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Estado: cualquiera</option>
-          {LEAD_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s.replaceAll("_", " ")}
-            </option>
-          ))}
-        </select>
-
-        {hasActiveFilters && (
-          <button className="chip border border-transparent text-taupe hover:text-ink underline underline-offset-2" onClick={clearFilters}>
-            Limpiar filtros
-          </button>
-        )}
-      </div>
+      {/* filtros: panel colapsable en mobile, chips de activos, misma lógica de consulta */}
+      <LeadFilters
+        values={{ temperature, hasEmail, hasWebsite, status, minScore }}
+        onTemperatureChange={setTemperature}
+        onHasEmailChange={setHasEmail}
+        onHasWebsiteChange={setHasWebsite}
+        onStatusChange={setStatus}
+        onMinScoreChange={setMinScore}
+        onClear={clearFilters}
+      />
 
       {/* avisos de exportación (CSV / Google Sheets) */}
       <ErrorNote message={exportError ?? undefined} />
@@ -372,54 +317,6 @@ function LeadsPageInner() {
       )}
     </div>
   );
-}
-
-function TriStateFilter({
-  label,
-  value,
-  onChange,
-  trueLabel,
-  falseLabel,
-}: {
-  label: string;
-  value: boolean | undefined;
-  onChange: (v: boolean | undefined) => void;
-  trueLabel: string;
-  falseLabel: string;
-}) {
-  return (
-    <div className="flex items-center gap-1 bg-white border border-sandline rounded-full p-0.5">
-      <span className="text-[10px] uppercase tracking-wide text-taupe pl-2 pr-1">{label}</span>
-      <button
-        className={cn("chip !py-1 !px-2 text-[11px]", value === undefined ? "bg-ink text-white" : "text-taupe")}
-        onClick={() => onChange(undefined)}
-      >
-        todos
-      </button>
-      <button
-        className={cn("chip !py-1 !px-2 text-[11px]", value === true ? "bg-ink text-white" : "text-taupe")}
-        onClick={() => onChange(value === true ? undefined : true)}
-      >
-        {trueLabel}
-      </button>
-      <button
-        className={cn("chip !py-1 !px-2 text-[11px]", value === false ? "bg-ink text-white" : "text-taupe")}
-        onClick={() => onChange(value === false ? undefined : false)}
-      >
-        {falseLabel}
-      </button>
-    </div>
-  );
-}
-
-function chipActive(t: string) {
-  const map: Record<string, string> = {
-    HOT: "!bg-[#FBE9E7] !text-[#B3261E] !border-[#F5C6C0]",
-    WARM: "!bg-[#FFF3E0] !text-[#B26A00] !border-[#F5D9A8]",
-    COLD: "!bg-[#E8F1FB] !text-[#0B57A4] !border-[#C3DCF5]",
-    LOW: "!bg-sand !text-taupe !border-sandline",
-  };
-  return map[t] ?? "";
 }
 
 function BusinessCell({ lead }: { lead: LeadSummary }) {

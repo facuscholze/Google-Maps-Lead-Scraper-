@@ -91,6 +91,35 @@ docker compose up --build
 `docker compose` loads `backend/.env` into the backend container (create it
 from `backend/.env.example` first) and runs `alembic upgrade head` on startup.
 
+### Frontend rebuild (Docker)
+
+`API_URL` is read by `next.config.mjs` **at build time** (the `/api/*` rewrites
+are baked into the standalone output), so it is a build arg in
+`docker-compose.yml`, not only a runtime env var. After changing it or the
+frontend code:
+
+```bash
+docker compose build --no-cache frontend && docker compose up -d
+```
+
+## Mail design (innblock)
+
+Outbound mail uses the innblock design (`backend/app/services/emailing/`):
+
+- `templates/innblock_email.html` — the single template (extracted from
+  `nuevo html innblock.html`, which is kept as the visual reference and is not
+  read at runtime).
+- `brand_config.py` — the only place to edit socios, contact, links, colors and
+  the services list. Entries marked `TO CONFIRM` must be checked before real sends.
+- `email_html.py` — renderer: escapes all lead data, builds the services/firma/
+  diagnóstico/evidencia fragments, and fails on unresolved `{{placeholders}}`.
+
+Per lead, the greeting, observation, opportunities and recommended solution come
+from the proposal (real audit data, editable by a human). The "Evidencia" stats
+are the lead's real reviews, rating and website score; sections without data are
+omitted. Proposal page: **Proposal → Revisar/Editar → Aprobar → Enviar**, with
+Copiar asunto / Copiar para Gmail / Copiar HTML / Descargar .html.
+
 ## Email sending modes
 
 | Mode | When | Behaviour |

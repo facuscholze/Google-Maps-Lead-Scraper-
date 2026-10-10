@@ -7,6 +7,7 @@ machine — use MockGmailSender instead.
 from __future__ import annotations
 
 import base64
+from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -24,7 +25,8 @@ def build_raw_message(
     message = MIMEMultipart("alternative")
     message["To"] = to_email
     message["From"] = from_email
-    message["Subject"] = subject
+    # RFC 2047: non-ASCII subjects (tildes, ñ, emojis) must be encoded as a header.
+    message["Subject"] = subject if subject.isascii() else Header(subject, "utf-8")
     if reply_to:
         message["Reply-To"] = reply_to
     if body_plain:

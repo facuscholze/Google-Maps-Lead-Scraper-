@@ -54,7 +54,8 @@ def test_proposal_lifecycle(db_session, workspace, ready_lead):
     proposal = service.generate(workspace.id, ready_lead.id)
     assert proposal.status == ProposalStatus.READY_FOR_REVIEW.value
     assert proposal.subject and proposal.body_html and proposal.body_plain
-    assert "AvaScho" in (proposal.body_html or "") or "AVASCHO" in (proposal.body_html or "")
+    assert "innblock" in (proposal.body_html or "")
+    assert "{{" not in (proposal.body_html or "")
     # human edit keeps plain/html consistent
     service.update_from_editor(proposal, {"subject": "Tema editado", "personalized_observation": "Texto humano."})
     assert proposal.subject == "Tema editado"

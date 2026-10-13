@@ -44,7 +44,7 @@ const DIM_LABELS: Record<string, string> = {
   contact: "Contacto",
   booking: "Reservas",
   trust: "Confianza",
-  automation: "Automatización",
+  automation: "Canales de consulta",
 };
 
 export default function LeadDetailPage() {
@@ -153,7 +153,7 @@ export default function LeadDetailPage() {
           </h2>
           <div className="rounded-2xl bg-night text-white p-5">
             <div className="text-[10px] uppercase tracking-[0.2em] text-goldsoft">Servicio recomendado</div>
-            <div className="font-display text-2xl font-semibold mt-1">{lead.recommended_service ?? "Custom AI Integration"}</div>
+            <div className="font-display text-2xl font-semibold mt-1">{lead.recommended_service ?? "Propuesta web por definir"}</div>
             <div className="text-xs text-white/50 mt-2">
               Acción recomendada: <b className="text-white/80">{lead.recommended_action?.replaceAll("_", " ") ?? "—"}</b>
             </div>

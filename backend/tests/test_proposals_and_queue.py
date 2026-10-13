@@ -54,10 +54,13 @@ def test_proposal_lifecycle(db_session, workspace, ready_lead):
     proposal = service.generate(workspace.id, ready_lead.id)
     assert proposal.status == ProposalStatus.READY_FOR_REVIEW.value
     assert proposal.subject and proposal.body_html and proposal.body_plain
-    assert "AvaScho" in (proposal.body_html or "") or "AVASCHO" in (proposal.body_html or "")
+    assert "Innblock" in proposal.body_html
+    assert 'class="ring1"' in proposal.body_html
     # human edit keeps plain/html consistent
     service.update_from_editor(proposal, {"subject": "Tema editado", "personalized_observation": "Texto humano."})
     assert proposal.subject == "Tema editado"
+    assert "Texto humano." in proposal.body_html and "Texto humano." in proposal.body_plain
+    assert "Innblock" in proposal.body_html
     service.approve(proposal, user_id=1)
     assert proposal.status == ProposalStatus.APPROVED.value
 
@@ -168,3 +171,20 @@ def test_low_confidence_never_queued(db_session, workspace):
     service.approve(proposal, user_id=1)
     with pytest.raises(QueueValidationError):
         EmailQueueService(db_session).queue_for_lead(workspace.id, lead.id, proposal.id)
+
+
+def test_regenerate_and_edit_require_fresh_approval(db_session, workspace, ready_lead):
+    service = ProposalService(db_session)
+    proposal = service.generate(workspace.id, ready_lead.id)
+    service.approve(proposal)
+    previous_version = proposal.version
+    proposal.body_html = '<p>Old template</p>'
+    regenerated = service.generate(workspace.id, ready_lead.id)
+    assert regenerated.version == previous_version + 1
+    assert regenerated.status == ProposalStatus.READY_FOR_REVIEW.value
+    assert regenerated.approved_at is None
+    assert 'class="ring1"' in regenerated.body_html
+    service.approve(regenerated)
+    service.update_from_editor(regenerated, {'recommended_solution': 'Una landing para su servicio principal.'})
+    assert regenerated.status == ProposalStatus.READY_FOR_REVIEW.value
+    assert regenerated.approved_at is None

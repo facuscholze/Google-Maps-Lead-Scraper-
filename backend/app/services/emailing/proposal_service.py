@@ -27,20 +27,21 @@ class ProposalService:
 
     # ---------------------------------------------------------------- context --
     def build_context(self, lead: Lead, audit: WebsiteAudit | None) -> dict[str, Any]:
-        strengths = []
-        if audit:
-            strengths = [s.get("text") or s for s in (audit.strengths or [])]
-        opportunities = audit.opportunities if audit else []
-        if not opportunities:
-            opportunities = lead.detected_opportunities or []
-        service = lead.recommended_service or "Custom AI Integration"
-        catalog = {}
-        try:
-            from app.services.catalog import AVA_SCHO_SERVICES
+        from app.services.catalog import AVA_SCHO_SERVICES, recommended_web_service
 
-            catalog = AVA_SCHO_SERVICES
-        except Exception:  # noqa: BLE001
-            pass
+        strengths = [s.get("text", "") if isinstance(s, dict) else str(s)
+                     for s in (audit.strengths or [])] if audit else []
+        # Old audits may contain automation offers. Never reuse those in web proposals.
+        opportunities = [o for o in ((audit.opportunities if audit else lead.detected_opportunities) or [])
+                         if o.get("service") in AVA_SCHO_SERVICES]
+        service = recommended_web_service(bool(lead.website), lead.website_score)
+        if not lead.website:
+            opportunities = [{
+                "title": "Un sitio propio para el negocio",
+                "opportunity": "Crear una web que presente sus servicios y facilite el contacto.",
+                "evidence": "La ficha consultada no incluye una URL web; conviene confirmar si ya tienen sitio.",
+            }]
+        catalog = AVA_SCHO_SERVICES
         return {
             "business_name": lead.business_name,
             "rating": lead.rating,
@@ -92,6 +93,8 @@ class ProposalService:
         else:
             proposal.version += 1
         proposal.status = ProposalStatus.READY_FOR_REVIEW.value
+        proposal.approved_at = None
+        proposal.reviewed_by_user_id = None
         proposal.subject = result.subject
         proposal.opening = result.opening
         proposal.personalized_observation = result.personalized_observation
@@ -107,7 +110,8 @@ class ProposalService:
             "model_note": result.model_note,
             "lead_score": lead.lead_score,
             "opportunity_score": lead.opportunity_score,
-            "recommended_service": lead.recommended_service,
+            "recommended_service": context["recommended_service"],
+            "template": "innblock",
         }
         self.db.flush()
         log_event("proposal_generated", proposal_id=proposal.id, lead_id=lead_id, model=provider.name)
@@ -142,8 +146,11 @@ class ProposalService:
             ProposalStatus.DRAFT.value,
             ProposalStatus.READY_FOR_REVIEW.value,
             ProposalStatus.AI_GENERATED.value,
+            ProposalStatus.APPROVED.value,
         ):
             proposal.status = ProposalStatus.READY_FOR_REVIEW.value
+            proposal.approved_at = None
+            proposal.reviewed_by_user_id = None
         self.db.flush()
         return proposal
 
@@ -151,6 +158,7 @@ class ProposalService:
     def _content_for_render(proposal: Proposal) -> dict[str, Any]:
         return {
             "business_name": proposal.lead.business_name if proposal.lead else "",
+            "recommended_service": (proposal.ai_reasoning or {}).get("recommended_service"),
             "opening": proposal.opening or "",
             "personalized_observation": proposal.personalized_observation or "",
             "strengths": proposal.strengths_json or [],

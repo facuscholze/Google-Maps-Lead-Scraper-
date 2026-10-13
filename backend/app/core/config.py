@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     default_timezone: str = "America/Argentina/Buenos_Aires"
 
+    # --- Outbound proposal identity -------------------------------------------
+    proposal_brand: str = "Innblock"
+    proposal_contact_email: str = ""
+    proposal_contact_url: str = "https://web-estudio-alpha.vercel.app/es/#contacto"
+    proposal_website_url: str = "https://web-estudio-alpha.vercel.app/es/"
+
     # --- Database / queue ------------------------------------------------------
     database_url: str = "postgresql+psycopg2://avascho:avascho@localhost:5432/avascho"
     redis_url: str = "redis://localhost:6379/0"

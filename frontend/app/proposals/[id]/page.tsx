@@ -95,7 +95,7 @@ export default function ProposalDetailPage() {
 
   const regenerate = runAction(async () => {
     await api.post(`/api/proposals/${id}/regenerate`);
-  }, "Propuesta regenerada.");
+  }, "Propuesta regenerada con la plantilla Innblock y el enfoque de venta web. Revisala antes de aprobar.");
 
   const send = runAction(async () => {
     await api.post(`/api/proposals/${id}/send`, {
@@ -140,7 +140,7 @@ export default function ProposalDetailPage() {
                 <PenLine size={15} /> {editing ? "Ver preview" : "Editar"}
               </Button>
               <Button variant="ghost" onClick={regenerate}>
-                <RefreshCw size={15} /> Regenerar
+                <RefreshCw size={15} /> Regenerar con Innblock
               </Button>
               {proposal.status !== "CANCELLED" && proposal.status !== "SENT" && (
                 <>

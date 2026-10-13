@@ -5,26 +5,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.config import settings
 from app.schemas.ai import AIProposal
 from app.services.emailing.email_html import render_plain_text, render_proposal_email
 
-SUBJECTS = {
-    "booking": "Una idea para {name}: turnos y reservas sin fricción",
-    "whatsapp": "Una idea para {name}: un WhatsApp que responde solo",
-    "followup": "Una idea para {name}: seguimiento automático de consultas",
-    "generic": "Una oportunidad que vimos en {name}",
-}
-
-
-def _subject_key(title: str) -> str:
-    lower = title.lower()
-    if "reserva" in lower:
-        return "booking"
-    if "whatsapp" in lower:
-        return "whatsapp"
-    if "seguimiento" in lower or "follow" in lower:
-        return "followup"
-    return "generic"
 
 
 class ProposalWriter:
@@ -35,20 +19,22 @@ class ProposalWriter:
         website_score = context.get("website_score")
         opportunities = context.get("opportunities") or []
         strengths = context.get("strengths") or []
-        service = context.get("recommended_service") or "Custom AI Integration"
+        from app.services.catalog import AVA_SCHO_SERVICES, recommended_web_service
+
+        service = context.get("recommended_service")
+        if service not in AVA_SCHO_SERVICES:
+            service = recommended_web_service(bool(context.get("website_url")), website_score)
         service_desc = context.get("service_description") or (
-            "Una automatización a la medida de tus procesos actuales."
+            AVA_SCHO_SERVICES[service]["description"]
         )
-        evidence_blob = context.get("evidence_blob")
 
         first = opportunities[0] if opportunities else {}
         top_title = str(first.get("title") or "mejorar la atención y la captación de consultas")
         top_evidence = str(first.get("evidence") or "")
-        key = _subject_key(top_title)
 
         # --- real reputation fact (never invented) ---------------------------
         if reviews > 0 and rating:
-            reputation = f"su muy buena reputación en Google, con {reviews} reseñas y una valoración de {rating}"
+            reputation = f"su presencia en Google, con {reviews} reseñas y una valoración de {rating}"
         elif reviews > 0:
             reputation = f"las {reviews} reseñas acumuladas en Google"
         else:
@@ -72,30 +58,13 @@ class ProposalWriter:
         observation = "\n".join(observation_parts)
 
         recommended_solution = (
-            f"Desde AvaScho trabajamos en automatización e inteligencia artificial para negocios. "
+            f"Desde {settings.proposal_brand} diseñamos landing pages y sitios web para negocios. "
             f"En este caso, creemos que {service} podría tener sentido: {service_desc}"
         )
 
         cta = (
-            f"Si te interesa, podemos mostrarte brevemente cómo podría funcionar aplicado a {name}, "
+            f"Si te interesa, podemos conversar sobre la estructura y el alcance de una web para {name}, "
             "sin ningún compromiso."
-        )
-
-        plain_text = "\n".join(
-            [
-                f"Hola {name},",
-                "",
-                observation,
-                "",
-                recommended_solution,
-                "",
-                cta,
-                "",
-                "Saludos,",
-                "Equipo AvaScho",
-                "",
-                "Si preferís no recibir más mensajes nuestros, simplemente respondé a este correo y lo tendremos en cuenta.",
-            ]
         )
 
         content: dict[str, Any] = {
@@ -115,14 +84,14 @@ class ProposalWriter:
             "recommended_service": service,
             "recommended_solution": recommended_solution,
             "call_to_action": cta,
-            "signature": "Saludos,\nEquipo AvaScho",
+            "signature": f"Saludos,\nEquipo {settings.proposal_brand}",
         }
         html = render_proposal_email(content)
         content["html"] = html
         content["plain_text"] = render_plain_text(content)
 
         return AIProposal(
-            subject=SUBJECTS[key].format(name=name),
+            subject=f"{service} para {name}",
             opening=content["opening"],
             personalized_observation=observation,
             strengths=content["strengths"],
@@ -130,7 +99,7 @@ class ProposalWriter:
             recommended_solution=recommended_solution,
             call_to_action=cta,
             signature=content["signature"],
-            plain_text=plain_text,
+            plain_text=content["plain_text"],
             html=html,
             confidence=context.get("confidence") or 0.85,
             model_note=(

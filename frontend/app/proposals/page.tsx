@@ -26,7 +26,7 @@ export default function ProposalsPage() {
     <div className="space-y-8 max-w-5xl">
       <div>
         <h1 className="font-display text-3xl font-semibold">Propuestas</h1>
-        <p className="text-sm text-taupe mt-1">Revisión humana antes de cualquier envío. La IA nunca envía directamente.</p>
+        <p className="text-sm text-taupe mt-1">Landing pages, sitios institucionales y rediseños con la plantilla Innblock. Revisá y aprobá cada propuesta antes de enviarla.</p>
       </div>
 
       {(!data || data.length === 0) && (

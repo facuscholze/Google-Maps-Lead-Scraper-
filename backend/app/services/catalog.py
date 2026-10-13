@@ -1,50 +1,14 @@
-"""AvaScho services catalog (spec §30) and opportunity heuristics.
-
-The rule-based provider recommends services from this catalog using detected
-evidence. Rules live here — not inside prompts or API handlers.
-"""
+"""Web-design services and evidence-based sales opportunities."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-AVA_SCHO_SERVICES: dict[str, dict[str, str]] = {
-    "AI WhatsApp Agent": {
-        "description": "Agente de IA conectado a WhatsApp que responde consultas y califica interesados 24/7.",
-        "signal": "whatsapp",
-    },
-    "AI Customer Support": {
-        "description": "Asistente de IA para atención al cliente multicanal con respuestas basadas en la info del negocio.",
-        "signal": "support",
-    },
-    "Appointment Automation": {
-        "description": "Reservas y agenda automatizadas con confirmación y recordatorios.",
-        "signal": "booking",
-    },
-    "Lead Follow-up": {
-        "description": "Seguimiento automático e inmediato de consultas recibidas por formularios y redes.",
-        "signal": "form",
-    },
-    "CRM Automation": {
-        "description": "Automatización de procesos comerciales y gestión de clientes en CRM.",
-        "signal": "crm",
-    },
-    "Website AI Chat": {
-        "description": "Chat inteligente en el website que responde y convierte visitas en consultas.",
-        "signal": "chat",
-    },
-    "Sales Automation": {
-        "description": "Pipeline comercial automatizado: captura, cualificación y seguimiento de oportunidades.",
-        "signal": "sales",
-    },
-    "Review Automation": {
-        "description": "Gestión y solicitud automatizada de reseñas de Google.",
-        "signal": "reviews",
-    },
-    "Custom AI Integration": {
-        "description": "Integración de IA a la medida de los procesos del negocio.",
-        "signal": "custom",
-    },
+AVA_SCHO_SERVICES = {
+    "Landing page": {"description": "Una página enfocada en un servicio o campaña, con contenido claro y una llamada a la acción para consultar.", "signal": "conversion"},
+    "Sitio web institucional": {"description": "Un sitio adaptable a celulares con presentación del negocio, servicios y canales de contacto.", "signal": "website"},
+    "Rediseño web": {"description": "Renovar la estructura y experiencia móvil del sitio, con mejoras de contenido y contacto basadas en su revisión.", "signal": "redesign"},
 }
+SERVICE_ORDER = list(AVA_SCHO_SERVICES)
 
 
 @dataclass(frozen=True)
@@ -56,59 +20,33 @@ class OpportunityRule:
     service_reason: str
 
 
-OPPORTUNITY_RULES: list[OpportunityRule] = [
-    OpportunityRule(
-        key="no_booking",
-        label="Automatización de reservas",
-        opportunity="Implementar un sistema de reservas automatizado con confirmación y recordatorios.",
-        service="Appointment Automation",
-        service_reason="El sitio no ofrece reserva online; un sistema automatizado capturaría turnos sin intervención manual.",
-    ),
-    OpportunityRule(
-        key="no_whatsapp",
-        label="Atención inteligente por WhatsApp",
-        opportunity="Implementar un agente de IA conectado a WhatsApp para responder consultas al instante.",
-        service="AI WhatsApp Agent",
-        service_reason="WhatsApp es el canal preferido de contacto y hoy no está aprovechado de forma automática.",
-    ),
-    OpportunityRule(
-        key="has_form_no_followup",
-        label="Automatizar seguimiento de consultas",
-        opportunity="Automatizar el seguimiento inmediato de las consultas recibidas por el formulario de contacto.",
-        service="Lead Follow-up",
-        service_reason="El sitio captura consultas con un formulario, pero no se detectó un sistema de respuesta automática.",
-    ),
-    OpportunityRule(
-        key="no_chat",
-        label="Chat de IA en el website",
-        opportunity="Incorporar un chat de IA al website para responder dudas frecuentes y calificar visitas.",
-        service="Website AI Chat",
-        service_reason="No se detectó atención en vivo ni chat; las visitas sin respuesta se pierden.",
-    ),
-    OpportunityRule(
-        key="good_reputation_no_digital",
-        label="Potenciar reputación digital",
-        opportunity="Automatizar la solicitud de reseñas para convertir la buena reputación en más clientes.",
-        service="Review Automation",
-        service_reason="La reputación en Google es fuerte; un sistema automatizado de reseñas la aprovecharía mejor.",
-    ),
-    OpportunityRule(
-        key="no_automation_contact",
-        label="Atención automatizada multicanal",
-        opportunity="Automatizar la primera respuesta de consultas por los canales que el negocio ya usa.",
-        service="AI Customer Support",
-        service_reason="No se detectó atención automatizada; la mayoría de las consultas fuera de horario quedan sin respuesta.",
-    ),
+OPPORTUNITY_RULES = [
+    OpportunityRule("no_cta", "Landing con llamada a la acción", "Diseñar una landing con un próximo paso claro para consultar.", "Landing page", "No se detectaron llamadas a la acción en las páginas revisadas."),
+    OpportunityRule("no_contact", "Contacto visible en la web", "Organizar los servicios y el contacto en un sitio institucional.", "Sitio web institucional", "No se detectó una página de contacto."),
+    OpportunityRule("no_mobile", "Rediseño adaptable a celulares", "Revisar el diseño móvil y adaptar la estructura de las páginas.", "Rediseño web", "No se encontró la etiqueta viewport; conviene validar la experiencia móvil."),
+    OpportunityRule("no_seo", "Contenido web mejor estructurado", "Revisar títulos y descripciones para presentar mejor los servicios.", "Rediseño web", "Faltan señales básicas de estructura en las páginas revisadas."),
 ]
 
-SERVICE_ORDER = [
-    "AI WhatsApp Agent",
-    "Appointment Automation",
-    "AI Customer Support",
-    "Lead Follow-up",
-    "Website AI Chat",
-    "Review Automation",
-    "CRM Automation",
-    "Sales Automation",
-    "Custom AI Integration",
-]
+
+def web_opportunities(site):
+    """Only observed absences; no claims about invisible business workflows."""
+    if not site.page_count:
+        return []
+    signals = {
+        "no_cta": (not site.has_cta, "No se detectó una llamada a la acción en las páginas analizadas."),
+        "no_contact": (not site.has_contact_page, "No se detectó una página de contacto en las páginas analizadas."),
+        "no_mobile": (not site.has_viewport, "No se encontró una etiqueta viewport en el HTML analizado."),
+        "no_seo": (not site.title or not site.meta_description or not site.h1_count, "No se encontraron todas las señales de título, descripción y H1 en el HTML analizado."),
+    }
+    return [dict(title=r.label, opportunity=r.opportunity, service=r.service,
+                 service_reason=r.service_reason, evidence=signals[r.key][1],
+                 source_url=site.url, confidence=0.8, kind="INFERENCE")
+            for r in OPPORTUNITY_RULES if signals[r.key][0]]
+
+
+def recommended_web_service(has_website, website_score=None):
+    if not has_website:
+        return "Sitio web institucional"
+    if website_score is not None and website_score < 7:
+        return "Rediseño web"
+    return "Landing page"

@@ -77,9 +77,11 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-`next.config.mjs` rewrites `/api/*` to the backend
+`app/api/[[...path]]/route.ts` proxies `/api/*` to the backend
 (`API_URL`, default `http://localhost:8000`), so the browser never calls the
-backend cross-origin and no secret ever reaches the client.
+backend cross-origin and no secret ever reaches the client. `API_URL` is read
+per request on the server, so pointing it somewhere else only needs a restart
+(no rebuild).
 
 ### 3. Full stack with Docker
 

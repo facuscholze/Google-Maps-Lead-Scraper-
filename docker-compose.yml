@@ -45,16 +45,26 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      # The frontend only starts once the API actually answers, so the first
+      # /api/* calls never hit a half-booted backend.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
 
   frontend:
     build: ./frontend
     environment:
-      # Runtime proxy target for the Next rewrites (/api/* → backend).
+      # Runtime proxy target: /api/* → backend (read per request by
+      # frontend/app/api/[[...path]]/route.ts — no rebuild needed to change it).
       API_URL: http://backend:8000
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   pgdata:

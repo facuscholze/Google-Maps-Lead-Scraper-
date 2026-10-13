@@ -45,6 +45,9 @@ cp backend/.env.example backend/.env
 docker compose up --build
 ```
 
+El frontend espera a que el backend pase su healthcheck (`/api/health`) antes de
+arrancar, así que no ves errores de conexión durante el boot.
+
 Queda disponible en:
 
 - Frontend / UI → <http://localhost:3000>
@@ -132,7 +135,7 @@ En **otra terminal**:
 cd frontend
 npm install
 
-# Decirle a Next dónde está el backend (lo usa el rewrite de next.config.mjs)
+# Decirle a Next dónde está el backend (lo usa el proxy de app/api/[[...path]]/route.ts)
 echo "API_URL=http://localhost:8000" > .env.local
 
 npm run dev
@@ -142,6 +145,8 @@ Abrí <http://localhost:3000>.
 
 El browser **nunca** habla con el backend directo: Next hace de proxy
 (`/api/*` → `API_URL/api/*`), así que no hay CORS ni secretos en el cliente.
+`API_URL` se lee **por request** (no en build), así que cambiarla solo requiere
+reiniciar el proceso: no hace falta reconstruir la imagen.
 
 ### 3. Usuario demo
 
@@ -234,6 +239,8 @@ npm run build
 | `pydantic ... field required` / `ENCRYPTION_KEY` vacía al guardar un token | Falta generar la clave Fernet en `backend/.env`. |
 | Login responde 401 con las credenciales demo | El `.env` tiene otro `DEMO_PASSWORD`. Cambialo o mirá el log del backend: imprime `demo user ready: <email>`. |
 | La UI carga pero todo `/api/*` da error de red | El backend no está en el puerto que dice `frontend/.env.local` (`API_URL`). Es solo la URL del proxy, no la del navegador. |
+| `502 "No se pudo conectar con el backend en ..."` | El proxy de Next no alcanza a `API_URL`. Revisá que el backend esté arriba y que la URL sea la correcta (en Docker es `http://backend:8000`, no `localhost`). |
+| En Docker: `Failed to proxy http://localhost:8000/api/... [AggregateError] ECONNREFUSED` | El contenedor del frontend usa la URL de build en vez de la del compose. Ya está corregido: el proxy lee `API_URL` en runtime. Si lo ves igual, hacé `docker compose build frontend` (imagen vieja cacheada) y volvé a subir. |
 | Pantalla vacía / dashboard sin datos | No hay búsquedas todavía. Corré una desde *Searches*. |
 | `429 Too many requests` | Hay un rate limit en memoria de 120 req/min por IP (`app/core/middleware.py`). Esperá un minuto. |
 | Las búsquedas devuelven datos raros / de ejemplo | `SEARCH_PROVIDER=mock`. Poné `SEARCH_PROVIDER=auto` (o `google`) y cargá `GOOGLE_MAPS_API_KEY` — se usa la **Places API `searchText`** oficial, nunca scraping. |

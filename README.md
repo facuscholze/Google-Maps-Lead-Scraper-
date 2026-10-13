@@ -107,7 +107,7 @@ missing emails are never queued.
 ```bash
 cd backend
 rm -f test_avascho.db    # the suite uses a local SQLite file; start clean
-.venv/bin/python -m pytest tests/ -q     # 51 tests, mocks only, offline
+.venv/bin/python -m pytest tests/ -q     # 83 tests, mocks only, offline
 ```
 
 Frontend type-check + production build:

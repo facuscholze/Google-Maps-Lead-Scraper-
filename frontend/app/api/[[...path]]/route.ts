@@ -45,6 +45,16 @@ const STRIP_RESPONSE_HEADERS = [
 /** Response codes that must not carry a body (Response constructor throws). */
 const BODYLESS_STATUSES = new Set([101, 204, 205, 304]);
 
+/**
+ * Methods that are safe to replay. If the backend dies mid-request — or simply
+ * closes a keep-alive socket that undici still holds in its pool, which happens
+ * after an unhandled 5xx or a restart — the first attempt can fail with a bare
+ * "fetch failed". Idempotent calls are retried once on a fresh connection;
+ * writes are not, because a duplicated search or email is worse than a 502 the
+ * user can retry.
+ */
+const REPLAYABLE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "DELETE"]);
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -62,6 +72,29 @@ function forwardableRequestHeaders(request: NextRequest): Headers {
   return headers;
 }
 
+function buildResponse(upstream: Response): Response {
+  const headers = new Headers(upstream.headers);
+  for (const header of STRIP_RESPONSE_HEADERS) headers.delete(header);
+
+  // `redirect: "manual"` can surface as a 0-status opaque redirect depending on
+  // the runtime; translate it back into a normal redirect.
+  if (upstream.status === 0) {
+    const location = headers.get("location");
+    if (location) return NextResponse.redirect(location, 302);
+    return NextResponse.json({ detail: "Respuesta inválida del backend." }, { status: 502 });
+  }
+
+  if (BODYLESS_STATUSES.has(upstream.status) || !upstream.body) {
+    return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers });
+  }
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers,
+  });
+}
+
 async function proxy(request: NextRequest): Promise<Response> {
   const target = targetUrl(request);
   const headers = forwardableRequestHeaders(request);
@@ -72,19 +105,25 @@ async function proxy(request: NextRequest): Promise<Response> {
     if (buffer.byteLength > 0) body = buffer;
   }
 
-  let upstream: Response;
+  const init: RequestInit = {
+    method: request.method,
+    headers,
+    body,
+    cache: "no-store",
+    redirect: "manual",
+    signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+  };
+
   try {
-    upstream = await fetch(target, {
-      method: request.method,
-      headers,
-      body,
-      cache: "no-store",
-      // 3xx (OAuth start, /api/docs → /api/docs/) is passed through untouched
-      // so the browser follows it, instead of being swallowed by the proxy.
-      redirect: "manual",
-      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
-    });
+    return buildResponse(await fetch(target, init));
   } catch (error) {
+    if (REPLAYABLE_METHODS.has(request.method)) {
+      try {
+        return buildResponse(await fetch(target, init));
+      } catch {
+        /* fall through and report the original error */
+      }
+    }
     const reason = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
       {
@@ -93,27 +132,6 @@ async function proxy(request: NextRequest): Promise<Response> {
       { status: 502 },
     );
   }
-
-  const responseHeaders = new Headers(upstream.headers);
-  for (const header of STRIP_RESPONSE_HEADERS) responseHeaders.delete(header);
-
-  // `redirect: "manual"` can surface as a 0-status opaque redirect depending on
-  // the runtime; translate it back into a normal redirect.
-  if (upstream.status === 0) {
-    const location = responseHeaders.get("location");
-    if (location) return NextResponse.redirect(location, 302);
-    return NextResponse.json({ detail: "Respuesta inválida del backend." }, { status: 502 });
-  }
-
-  if (BODYLESS_STATUSES.has(upstream.status) || !upstream.body) {
-    return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders });
-  }
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: responseHeaders,
-  });
 }
 
 export const GET = proxy;

@@ -13,9 +13,8 @@ from app.core.enums import (
     RecommendedAction,
 )
 from app.services.analysis.types import AuditResult
-from app.services.catalog import SERVICE_ORDER
 
-RULE_WEIGHTS = {"no_booking": 5, "no_whatsapp": 4, "has_form_no_followup": 3, "no_chat": 2}
+RULE_WEIGHTS = {"no_cta": 5, "no_contact": 4, "no_mobile": 5, "no_seo": 3}
 
 
 def temperature_for(score: int) -> str:
@@ -107,25 +106,27 @@ class LeadScorer:
             quality = max(2, min(8, round(website_score / 10 * 8)))
             lead_score += quality
             lead_reasons.append({"delta": quality, "label": "Calidad del website", "detail": f"Score {website_score:.1f}/10"})
-            digital_maturity = 6 + round((website_score or 0) * 0.8)
+            digital_maturity = 6 + round((10 - website_score) * 2)
             opportunity_score += digital_maturity
-            opp_reasons.append({"delta": digital_maturity, "label": "Madurez digital", "detail": f"Presencia web con score {website_score:.1f}/10"})
+            opp_reasons.append({"delta": digital_maturity, "label": "Oportunidad de mejora web", "detail": f"Presencia web con score {website_score:.1f}/10"})
         elif has_website:
             lead_score += 12
             lead_reasons.append({"delta": 12, "label": "Website activo", "detail": "Presencia web detectada"})
             opportunity_score += 8
             opp_reasons.append({"delta": 8, "label": "Presencia web detectable", "detail": "El negocio tiene website (aún no auditado)"})
         else:
-            lead_score += 0
-            opp_reasons.append({"delta": 2, "label": "Sin website", "detail": "No hay presencia web detectable"})
+            lead_score += 16
+            lead_reasons.append({"delta": 16, "label": "Potencial para una web nueva", "detail": "Sin sitio registrado en Google Places"})
+            opportunity_score += 30
+            opp_reasons.append({"delta": 30, "label": "Web nueva", "detail": "No hay sitio registrado; validar si ya tienen uno"})
 
         # --- detected opportunities -----------------------------------------
         if audit and audit.opportunities:
             opp_weight = self._opportunity_weight(audit)
             lead_score += 10
-            lead_reasons.append({"delta": 10, "label": "Oportunidades de automatización", "detail": f"{len(audit.opportunities)} oportunidad(es) detectadas"})
+            lead_reasons.append({"delta": 10, "label": "Oportunidades de diseño web", "detail": f"{len(audit.opportunities)} oportunidad(es) detectadas"})
             opportunity_score += opp_weight
-            opp_reasons.append({"delta": opp_weight, "label": "Brechas de automatización claras", "detail": "; ".join(o["title"] for o in audit.opportunities[:3])})
+            opp_reasons.append({"delta": opp_weight, "label": "Mejoras web detectadas", "detail": "; ".join(o["title"] for o in audit.opportunities[:3])})
 
         # --- contactability ----------------------------------------------------
         if has_phone:
@@ -140,19 +141,20 @@ class LeadScorer:
             opportunity_score += conf_points
             opp_reasons.append({"delta": conf_points, "label": "Email disponible", "detail": f"Confianza {email_confidence}"})
 
-        # --- fit bonus from weak automation (opportunity side) --------------------
+        # Web conversion and mobile experience, not invisible automation.
         if audit:
-            if audit.subscores.get("automation", 10) < 6:
-                opportunity_score += 6
-                opp_reasons.append({"delta": 6, "label": "Automatización ausente o básica", "detail": f"Subscore automatización {audit.subscores['automation']}/10"})
-            if audit.subscores.get("booking", 10) < 6:
-                opportunity_score += 5
-                opp_reasons.append({"delta": 5, "label": "Sin reserva online", "detail": "El negocio gestiona turnos manualmente"})
+            for dimension in ("conversion", "mobile"):
+                if audit.subscores.get(dimension, 10) < 6:
+                    opportunity_score += 6
+                    opp_reasons.append({"delta": 6, "label": f"Mejora web: {dimension}",
+                                        "detail": f"Subscore {dimension}: {audit.subscores[dimension]}/10"})
 
         lead_score = min(100, lead_score)
         opportunity_score = min(100, opportunity_score)
 
-        recommended_service = self._recommend_service(audit)
+        from app.services.catalog import recommended_web_service
+
+        recommended_service = recommended_web_service(has_website, website_score)
         temperature = temperature_for(lead_score)
         priority = priority_for(lead_score, opportunity_score)
         recommended_action = self._recommended_action(
@@ -203,16 +205,10 @@ class LeadScorer:
 
     @staticmethod
     def _recommend_service(audit: AuditResult | None) -> str:
-        if not audit or not audit.opportunities:
-            return "Custom AI Integration"
-        scores: dict[str, int] = {}
-        for opportunity in audit.opportunities:
-            service = str(opportunity.get("service", ""))
-            title = str(opportunity.get("title", ""))
-            key = next((rule.key for rule in _RULE_LIST if rule.label.lower() in title.lower()), None)
-            scores[service] = scores.get(service, 0) + RULE_WEIGHTS.get(key or "", 1)
-        best = max(scores, key=lambda k: (scores[k], -SERVICE_ORDER.index(k) if k in SERVICE_ORDER else 0))
-        return best
+        from app.services.catalog import recommended_web_service
+
+        return recommended_web_service(bool(audit and audit.extracted.url),
+                                       audit.overall_score if audit else None)
 
     @staticmethod
     def _recommended_action(
@@ -278,7 +274,7 @@ class LeadScorer:
             )
         else:
             parts.append(
-                "Aun así, la gestión de consultas y reservas sigue dependiendo mayormente de procesos manuales."
+                "Conviene validar si necesitan una landing page o un sitio institucional antes de definir el alcance."
             )
         if email_confidence:
             parts.append(
@@ -295,8 +291,8 @@ class LeadScorer:
                 f"Actuar ahora posiciona a AvaScho como el partner que cierra esa brecha antes que la competencia."
             )
         if temperature == LeadTemperature.HOT.value:
-            return "El negocio está en su mejor momento digital; una automatización temprana genera ventaja competitiva."
-        return "El negocio podría estar receptivo a mejorar procesos; conviene validar con una primera conversación corta."
+            return "El negocio está en su mejor momento digital; se puede explorar una landing para un servicio o campaña."
+        return "El negocio podría estar receptivo a mejorar su presencia web; conviene validar con una primera conversación corta."
 
 
 from app.services.catalog import OPPORTUNITY_RULES as _RULE_LIST  # noqa: E402

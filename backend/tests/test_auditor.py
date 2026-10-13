@@ -30,10 +30,12 @@ def test_weaknesses_have_evidence():
         assert weakness["kind"] in ("FACT", "INFERENCE")
 
 
-def test_no_booking_opportunity_detected():
+def test_web_opportunities_only():
     audit = _audit("renovarte")  # no booking, no whatsapp
     titles = [o["title"] for o in audit.opportunities]
-    assert any("reserva" in t.lower() for t in titles)
+    from app.services.catalog import AVA_SCHO_SERVICES
+    assert all(o["service"] in AVA_SCHO_SERVICES for o in audit.opportunities)
+    assert not any("automat" in t.lower() for t in titles)
 
 
 def test_booking_present_no_false_booking_problem():

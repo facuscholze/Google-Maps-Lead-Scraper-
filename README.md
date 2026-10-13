@@ -132,3 +132,38 @@ npm run build
 | `DAILY_EMAIL_LIMIT`, `MIN/MAX_SEND_DELAY_SECONDS`, `ALLOWED_HOURS_*`, `WORKING_DAYS` | outbound guardrails |
 | `AI_PROVIDER` | `rule_based` (offline) or `openai_compatible` |
 | `DATABASE_URL`, `REDIS_URL`, `EXECUTION_MODE` | infra (`inline` runs pipeline in-process) |
+
+## Propuestas de landing pages y sitios web (Innblock)
+
+Las propuestas nuevas y regeneradas usan el diseño de **`nuevo html innblock.html`**
+(portal geométrico, rojo/negro, tablas y estilos inline), no la antigua plantilla
+AvaScho. El backend renderiza el bloque `script#plantilla` como HTML estático:
+**no envía el editor ni ejecuta JavaScript en el correo**. Las animaciones y fuentes
+externas dependen del cliente de email; el contenido sigue siendo legible sin ellas.
+
+- Sin URL registrada: propone un **sitio institucional**, sin afirmar que el negocio
+  no tenga web; se pide confirmar.
+- Web con score menor a 7: propone un **rediseño**.
+- Web con mejor score o sin auditoría concluyente: explora una **landing page**.
+- Las oportunidades se basan en CTA, contacto, estructura y señales móviles.
+  Ya no se venden agentes IA, CRM ni automatización de procesos.
+- Configurá `PROPOSAL_BRAND`, `PROPOSAL_CONTACT_EMAIL`, `PROPOSAL_CONTACT_URL`
+  y `PROPOSAL_WEBSITE_URL` en `backend/.env` antes de enviar. Los enlaces por
+  defecto son los del HTML original; no se inventa un email de contacto.
+
+**Propuestas existentes:** no se modifican silenciosamente ni se reenvían correos.
+Abrí una propuesta pendiente y pulsá **Regenerar con Innblock** (reemplaza el borrador
+actual), revisala y volvé a aprobarla. Esto también descarta ofertas antiguas de
+IA presentes en auditorías guardadas. Para actualizar los puntajes y hallazgos
+persistidos de leads anteriores, volvé a ejecutar la auditoría/búsqueda correspondiente.
+
+La copia estática `backend/app/services/emailing/templates/innblock.html` se incluye
+con el backend para que funcione también con `docker build ./backend`.
+Tras modificar el bloque de plantilla del HTML original, ejecutá:
+
+```bash
+python backend/scripts/sync_proposal_template.py
+```
+
+Una prueba verifica que la copia desplegable coincida exactamente con el original.
+Reiniciá/reconstruí el backend y frontend para aplicar estos cambios en un despliegue existente.

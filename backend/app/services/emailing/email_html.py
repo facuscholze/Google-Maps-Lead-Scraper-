@@ -1,84 +1,75 @@
-"""AvaScho brand email HTML builder (spec §40).
+"""Server-side rendering of the email inside nuevo html innblock.html.
 
-Produces inline-styled, email-client compatible HTML (Gmail, Outlook, Apple
-Mail, mobile). Brand palette: white/black/beige/gold. All business-provided
-text is escaped before interpolation.
+No JavaScript is executed or sent. All lead/model text is HTML-escaped.
+The packaged template is also available in standalone backend Docker builds.
 """
 from __future__ import annotations
 
 import html
-import string
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
-_TEMPLATE_PATH = Path(__file__).parent / "templates" / "email.html"
+from app.core.config import settings
+from app.services.catalog import AVA_SCHO_SERVICES
+
+_TEMPLATE_PATH = Path(__file__).parent / "templates" / "innblock.html"
 
 
 def _esc(value: Any) -> str:
-    return html.escape(str(value or ""))
+    return html.escape(str(value if value is not None else ""))
 
 
 def _paragraphs(text: str | None) -> str:
-    if not text:
-        return ""
-    blocks = [b.strip() for b in str(text).split("\n") if b.strip()]
-    return "\n".join(f'<p style="margin:0 0 14px 0;">{_esc(b)}</p>' for b in blocks)
+    return "\n".join(f'<p style="margin:0 0 14px;">{_esc(b.strip())}</p>'
+                     for b in str(text or "").split("\n") if b.strip())
+
+
+def _safe_link(value: str) -> str:
+    url = urlsplit(value)
+    if url.scheme not in ("https", "http", "mailto") or (url.scheme != "mailto" and not url.netloc):
+        raise ValueError("Proposal contact links must use http(s) or mailto")
+    return _esc(value)
 
 
 def render_proposal_email(content: dict[str, Any]) -> str:
-    """Render full email HTML from proposal content dict."""
-    try:
-        template_text = _TEMPLATE_PATH.read_text(encoding="utf-8")
-    except OSError:  # pragma: no cover
-        template_text = "<html><body>$body_html</body></html>"
-
-    opportunities = content.get("opportunities") or []
-    opp_html = "\n".join(
-        f"""
-        <tr>
-          <td style="padding:0 0 10px 0;font-size:14px;line-height:21px;color:#333333;">
-            <span style="color:#B08D3E;font-weight:700;">✓</span>&nbsp;
-            <strong>{_esc(o.get('title', ''))}</strong>
-            {f'<span style="color:#777777;">— {_esc(o.get("opportunity", ""))}</span>' if o.get('opportunity') else ''}
-          </td>
-        </tr>"""
-        for o in opportunities[:4]
+    template = _TEMPLATE_PATH.read_text(encoding="utf-8")
+    opportunities = "".join(
+        '<p style="margin:0 0 14px;"><strong>' + _esc(o.get("title")) + '</strong><br>'
+        + _esc(o.get("opportunity")) + '<br><span style="color:#777777;">'
+        + _esc(o.get("evidence")) + '</span></p>'
+        for o in (content.get("opportunities") or [])[:4]
     )
-    strengths = content.get("strengths") or []
-    strengths_html = (
-        "\n".join(
-            f'<span style="display:inline-block;background:#F5F1E8;color:#444444;'
-            f'border-radius:999px;padding:5px 12px;font-size:12px;margin:0 4px 6px 0;">'
-            f'{_esc(s)}</span>'
-            for s in strengths[:6]
-        )
+    services = "".join(
+        f'<table role="presentation" width="100%" style="border-top:1px solid #e3e3e3;">'
+        f'<tr><td style="padding:16px 0;color:#d90000;width:40px;">{i:02}</td>'
+        f'<td style="padding:16px 0;"><strong>{_esc(name)}</strong>'
+        f'<p style="color:#666666;font-size:13px;line-height:20px;">{_esc(service["description"])}</p></td></tr></table>'
+        for i, (name, service) in enumerate(AVA_SCHO_SERVICES.items(), 1)
     )
-
     values = {
-        "brand": "AvaScho",
-        "business": _esc(content.get("business_name") or "tu empresa"),
-        "website_score_badge": (
-            f'<div style="background:#111111;color:#ffffff;border-radius:14px;'
-            f'padding:18px 22px;text-align:center;max-width:220px;margin:18px auto;">'
-            f'<div style="font-size:11px;letter-spacing:1.5px;color:#C9B27A;">WEBSITE SCORE</div>'
-            f'<div style="font-size:30px;font-weight:700;color:#ffffff;">'
-            f'{_esc(content.get("website_score") or "—")}<span style="font-size:14px;color:#C9B27A;">/10</span>'
-            f'</div></div>'
-            if content.get("website_score") is not None
-            else ""
-        ),
-        "opening": _paragraphs(content.get("opening")),
-        "observation": _paragraphs(content.get("personalized_observation")),
-        "strengths_html": strengths_html,
-        "opportunities_html": opp_html,
-        "solution_title": _esc(content.get("recommended_service") or "Nuestra recomendación"),
-        "solution_desc": _paragraphs(content.get("recommended_solution")),
-        "cta_text": _esc(content.get("call_to_action") or "Responder a este correo"),
-        "cta_link": _esc(content.get("cta_link") or "mailto:hola@avascho.com"),
-        "signature": _paragraphs(content.get("signature") or "Saludos,\nEquipo AvaScho"),
-        "score_value": _esc(content.get("website_score") or ""),
+        "empresa": _esc(settings.proposal_brand),
+        "empresaCliente": _esc(content.get("business_name") or "tu negocio"),
+        "ubicacion": "Uruguay · Argentina", "hechoEn": "Uruguay · Argentina · Brasil",
+        "anio": str(datetime.now(timezone.utc).year), "rojo": "#d90000", "negro": "#070707",
+        "lema": "Diseñamos landing pages y sitios web para presentar tu negocio y facilitar las consultas.",
+        "apertura": _paragraphs(content.get("opening")),
+        "observacion": _paragraphs(content.get("personalized_observation")),
+        "servicioRecomendado": _esc(content.get("recommended_service") or "Nuestra propuesta web"),
+        "solucion": _paragraphs(content.get("recommended_solution")),
+        "oportunidades": opportunities,
+        "fortalezas": "".join(_paragraphs(s) for s in (content.get("strengths") or [])[:4]),
+        "servicios": services,
+        "llamadaAccion": _esc(content.get("call_to_action") or "¿Conversamos sobre tu próxima web?"),
+        "firma": _paragraphs(content.get("signature") or f"Saludos,\nEquipo {settings.proposal_brand}"),
+        "tuEmail": _esc(settings.proposal_contact_email),
+        "linkContacto": _safe_link(settings.proposal_contact_url),
+        "linkWeb": _safe_link(settings.proposal_website_url),
     }
-    return string.Template(template_text).safe_substitute(values)
+    # Strict substitution: a missing slot is a deployment error, not a broken email.
+    return re.sub(r"{{(\w+)}}", lambda match: values[match[1]], template)
 
 
 def render_plain_text(content: dict[str, Any]) -> str:
@@ -101,7 +92,7 @@ def render_plain_text(content: dict[str, Any]) -> str:
     lines.append("")
     lines.append(content.get("call_to_action") or "")
     lines.append("")
-    lines.append(content.get("signature") or "Saludos,\nEquipo AvaScho")
+    lines.append(content.get("signature") or f"Saludos,\nEquipo {settings.proposal_brand}")
     lines.append("")
     lines.append("Si preferís no recibir más mensajes nuestros, simplemente respondé a este correo y lo tendremos en cuenta.")
     return "\n".join(str(line) for line in lines)

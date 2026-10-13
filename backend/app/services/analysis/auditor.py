@@ -157,8 +157,8 @@ class WebsiteAuditor:
             automation -= 4.0
             findings.append(
                 Finding(
-                    "No se detectó atención automática",
-                    "No hay WhatsApp, reserva online ni formulario que disparen procesos automáticos.",
+                    "Canales de consulta limitados",
+                    "No se detectaron enlaces WhatsApp, reserva online ni formularios en las páginas analizadas.",
                     home_url, "INFERENCE", "automation",
                 )
             )
@@ -180,9 +180,9 @@ class WebsiteAuditor:
             "automation": max(0.0, round(automation, 1)),
         }
         weights = {
-            "design": 0.12, "mobile": 0.12, "seo": 0.12, "performance": 0.08,
-            "conversion": 0.10, "cta": 0.08, "contact": 0.10, "booking": 0.12,
-            "trust": 0.08, "automation": 0.08,
+            "design": 0.14, "mobile": 0.18, "seo": 0.14, "performance": 0.08,
+            "conversion": 0.14, "cta": 0.10, "contact": 0.12, "booking": 0.00,
+            "trust": 0.10, "automation": 0.00,
         }
         overall = round(sum(subscores[d] * weights[d] for d in DIMENSIONS), 1)
 
@@ -209,10 +209,10 @@ class WebsiteAuditor:
 
         weaknesses: list[dict] = []
         # Deterministic derived weaknesses from lowest dimensions.
-        low_dimensions = sorted(subscores.items(), key=lambda kv: kv[1])[:3]
+        low_dimensions = sorted(((k, v) for k, v in subscores.items() if weights[k] > 0), key=lambda kv: kv[1])[:3]
         mapped_problem = {
             "booking": "No se detectó reserva online",
-            "automation": "No se detectó atención automática",
+            "automation": "Canales de consulta limitados",
             "cta": "CTA poco visible",
             "contact": "Contacto limitado",
             "seo": "SEO básico mejorable",
@@ -237,60 +237,9 @@ class WebsiteAuditor:
                 "score": score,
             })
 
-        from app.services.catalog import OPPORTUNITY_RULES
+        from app.services.catalog import web_opportunities
 
-        opportunities: list[dict] = []
-        active_keys: set[str] = set()
-        if not site.has_booking_page:
-            rule = next(r for r in OPPORTUNITY_RULES if r.key == "no_booking")
-            opportunities.append({
-                "title": rule.label,
-                "opportunity": rule.opportunity,
-                "service": rule.service,
-                "service_reason": rule.service_reason,
-                "evidence": "No se encontró enlace o botón de reserva en las páginas analizadas.",
-                "source_url": home_url,
-                "confidence": 0.9,
-            })
-            active_keys.add("no_booking")
-        if not site.whatsapp_numbers:
-            rule = next(r for r in OPPORTUNITY_RULES if r.key == "no_whatsapp")
-            opportunities.append({
-                "title": rule.label,
-                "opportunity": rule.opportunity,
-                "service": rule.service,
-                "service_reason": rule.service_reason,
-                "evidence": "No se encontró enlace wa.me ni botón WhatsApp.",
-                "source_url": home_url,
-                "confidence": 0.85,
-            })
-            active_keys.add("no_whatsapp")
-        if site.has_form:
-            rule = next(r for r in OPPORTUNITY_RULES if r.key == "has_form_no_followup")
-            opportunities.append({
-                "title": rule.label,
-                "opportunity": rule.opportunity,
-                "service": rule.service,
-                "service_reason": rule.service_reason,
-                "evidence": "El sitio incluye un formulario de contacto sin respuesta automática visible.",
-                "source_url": home_url,
-                "confidence": 0.75,
-            })
-            active_keys.add("has_form_no_followup")
-        if site.whatsapp_numbers and not site.has_booking_page:
-            # WhatsApp present but no booking automation
-            pass
-        if not active_keys:
-            rule = next(r for r in OPPORTUNITY_RULES if r.key == "no_chat")
-            opportunities.append({
-                "title": rule.label,
-                "opportunity": rule.opportunity,
-                "service": rule.service,
-                "service_reason": rule.service_reason,
-                "evidence": "No se detectó atención en vivo ni chatbot en las páginas analizadas.",
-                "source_url": home_url,
-                "confidence": 0.7,
-            })
+        opportunities = web_opportunities(site)
 
         return AuditResult(
             overall_score=overall,

@@ -25,7 +25,7 @@ from app.models.website import WebsiteAudit, WebsitePage
 from app.schemas.ai import AIWebsiteAudit
 from app.services.analysis.auditor import WebsiteAuditor
 from app.services.analysis.types import AuditResult, ExtractedWebsite, PageData
-from app.utils.text import utcnow
+from app.utils.text import as_utc, utcnow
 
 logger = logging.getLogger("avascho.website")
 CACHE_TTL = timedelta(hours=168)  # 7 days
@@ -54,7 +54,7 @@ class WebsiteAnalysisService:
             return None
         if not lead.content_hash or audit.content_hash != lead.content_hash:
             return None
-        if lead.last_crawled_at is None or lead.last_crawled_at + CACHE_TTL < utcnow():
+        if lead.last_crawled_at is None or as_utc(lead.last_crawled_at) + CACHE_TTL < utcnow():
             return None
         return audit
 

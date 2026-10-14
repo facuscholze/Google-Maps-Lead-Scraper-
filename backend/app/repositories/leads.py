@@ -33,6 +33,8 @@ class LeadRepository(BaseRepository[Lead]):
         page_size: int = 50,
         filters: dict[str, Any] | None = None,
         linked_only: bool = True,
+        sort: str | None = None,
+        order: str = "desc",
     ) -> tuple[list[Lead], int]:
         stmt = self._scoped(workspace_id)
         if search_id is not None:
@@ -46,9 +48,31 @@ class LeadRepository(BaseRepository[Lead]):
         count = self.db.scalar(
             select(func.count()).select_from(stmt.order_by(None).subquery())
         ) or 0
-        stmt = stmt.order_by(Lead.lead_score.desc().nullslast(), Lead.reviews_count.desc())
+        stmt = stmt.order_by(*self._sort_clauses(sort, order))
         stmt = stmt.offset((page - 1) * page_size).limit(page_size)
         return list(self.db.scalars(stmt).all()), count
+
+    # Whitelist anti-inyección: solo columnas reales ordenables desde la UI.
+    @staticmethod
+    def _sort_clauses(sort: str | None, order: str):
+        sortable = {
+            "business_name": Lead.business_name,
+            "category": Lead.category,
+            "city": Lead.city,
+            "reviews_count": Lead.reviews_count,
+            "rating": Lead.rating,
+            "website_score": Lead.website_score,
+            "opportunity_score": Lead.opportunity_score,
+            "lead_score": Lead.lead_score,
+            "created_at": Lead.created_at,
+        }
+        col = sortable.get(sort or "")
+        clauses = []
+        if col is not None:
+            primary = col.asc() if order == "asc" else col.desc()
+            clauses.append(primary.nullslast())
+        clauses.extend([Lead.lead_score.desc().nullslast(), Lead.reviews_count.desc()])
+        return clauses
 
     @staticmethod
     def _apply_filters(stmt: Select, filters: dict[str, Any]) -> Select:
@@ -90,6 +114,19 @@ class LeadRepository(BaseRepository[Lead]):
         status = filters.get("status")
         if status:
             stmt = stmt.where(Lead.status == status)
+        city = filters.get("city")
+        if city:
+            stmt = stmt.where(Lead.city.ilike(f"%{city}%"))
+        category = filters.get("category")
+        if category:
+            stmt = stmt.where(Lead.category.ilike(f"%{category}%"))
+        tag = filters.get("tag")
+        if tag:
+            # padded CSV: ",frio,recontacto," → LIKE '%,frio,%'
+            stmt = stmt.where(Lead.tags.ilike(f"%,{tag.strip().lower()},%"))
+        owner = filters.get("owner")
+        if owner:
+            stmt = stmt.where(Lead.owner_name.ilike(f"%{owner}%"))
         query = filters.get("q")
         if query:
             stmt = stmt.where(Lead.business_name.ilike(f"%{query}%"))

@@ -76,6 +76,7 @@ def create_app() -> FastAPI:
     from app.api.routes_health import router as health_router
     from app.api.routes_jobs import router as jobs_router
     from app.api.routes_leads import router as leads_router
+    from app.api.routes_lead_views import router as lead_views_router
     from app.api.routes_proposals import router as proposals_router
     from app.api.routes_searches import router as searches_router
     from app.api.routes_suppression import router as suppression_router
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix=api)
     app.include_router(searches_router, prefix=api)
     app.include_router(leads_router, prefix=api)
+    app.include_router(lead_views_router, prefix=api)
     app.include_router(proposals_router, prefix=api)
     app.include_router(email_accounts_router, prefix=api)
     app.include_router(emails_router, prefix=api)

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -40,7 +40,7 @@ from app.repositories.emailing import (
     SuppressionRepository,
     mark_lead_suppressed,
 )
-from app.utils.text import utcnow
+from app.utils.text import as_utc, utcnow
 
 logger = logging.getLogger("avascho.queue")
 
@@ -155,7 +155,8 @@ class EmailQueueService:
             return None
         # ROUND_ROBIN
         if connected:
-            return min(connected, key=lambda a: (a.last_sent_at or datetime.min.replace(tzinfo=utcnow().tzinfo), a.id))
+            epoch = datetime.min.replace(tzinfo=timezone.utc)
+            return min(connected, key=lambda a: (as_utc(a.last_sent_at) if a.last_sent_at else epoch, a.id))
         return None
 
     @staticmethod

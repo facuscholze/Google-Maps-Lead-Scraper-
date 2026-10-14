@@ -20,10 +20,15 @@ from app.repositories.audits import AuditRepository
 from app.repositories.leads import LeadRepository
 from app.repositories.searches import SearchRepository
 from app.schemas.api import (
+    BulkProposalsResponse,
     ExportToSheetsRequest,
+    LeadActivityItem,
+    LeadActivityOut,
     LeadDetail,
     LeadListResponse,
     LeadSummary,
+    LeadsBulkRequest,
+    LeadsBulkResponse,
     ProposalOut,
     SheetsExportResponse,
 )
@@ -67,6 +72,10 @@ def _build_lead_filters(
     email_confidence: str | None = None,
     recommended_service: str | None = None,
     status: str | None = None,
+    city: str | None = None,
+    category: str | None = None,
+    tag: str | None = None,
+    owner: str | None = None,
     q: str | None = None,
 ) -> dict[str, Any]:
     """Build the filter dict understood by `LeadRepository._apply_filters`.
@@ -86,6 +95,10 @@ def _build_lead_filters(
         "email_confidence": email_confidence,
         "recommended_service": recommended_service,
         "status": status,
+        "city": city,
+        "category": category,
+        "tag": tag,
+        "owner": owner,
         "q": q,
     }
 
@@ -134,7 +147,7 @@ def list_leads(
     db: Session = Depends(get_db),
     search_id: int | None = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(25, ge=1, le=200),
+    page_size: int = Query(25, ge=1, le=500),  # 500 = tope honesto de la vista mapa (D3.5)
     temperature: str | None = None,
     min_lead_score: int | None = None,
     min_opportunity_score: int | None = None,
@@ -146,6 +159,12 @@ def list_leads(
     email_confidence: str | None = None,
     recommended_service: str | None = None,
     status: str | None = None,
+    city: str | None = None,
+    category: str | None = None,
+    tag: str | None = None,
+    owner: str | None = None,
+    sort: str | None = Query(default=None, pattern="^(business_name|category|city|reviews_count|rating|website_score|opportunity_score|lead_score|created_at)$"),
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
     q: str | None = None,
     include_unlinked: bool = False,
 ) -> LeadListResponse:
@@ -161,11 +180,15 @@ def list_leads(
         email_confidence=email_confidence,
         recommended_service=recommended_service,
         status=status,
+        city=city,
+        category=category,
+        tag=tag,
+        owner=owner,
         q=q,
     )
     items, total = LeadRepository(db).list_for_workspace(
         user.workspace_id, search_id=search_id, page=page, page_size=page_size,
-        filters=filters, linked_only=not include_unlinked,
+        filters=filters, linked_only=not include_unlinked, sort=sort, order=order,
     )
     return LeadListResponse(
         items=[_lead_summary(l) for l in items], total=total, page=page, page_size=page_size
@@ -458,3 +481,137 @@ def get_lead_audit(
             for p in pages
         ],
     }
+
+
+# ------------------------------------------------------------- bulk actions --
+@router.post("/bulk", response_model=LeadsBulkResponse)
+def leads_bulk_action(
+    payload: LeadsBulkRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LeadsBulkResponse:
+    """Acciones masivas sobre leads seleccionados (Fase 4). Nunca borra datos:
+    "archive" mueve a ARCHIVED, "unarchive" devuelve a NEW."""
+    from app.core.enums import LeadStatus
+
+    repo = LeadRepository(db)
+    updated = 0
+    skipped: list[int] = []
+    for lead_id in payload.ids:
+        lead = repo.get_for_workspace(user.workspace_id, lead_id)
+        if lead is None:
+            skipped.append(lead_id)
+            continue
+        if payload.action == "set_status":
+            valid = {s.value for s in LeadStatus}
+            if payload.status not in valid:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"status inválido: {payload.status}")
+            lead.status = payload.status  # type: ignore[assignment]
+        elif payload.action == "archive":
+            lead.status = LeadStatus.ARCHIVED.value
+        elif payload.action == "unarchive":
+            lead.status = LeadStatus.NEW.value
+        elif payload.action in ("add_tag", "remove_tag"):
+            tag = (payload.tag or "").strip().lower()
+            if not tag:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "tag vacío")
+            current = {t for t in (lead.tags or "").split(",") if t}
+            if payload.action == "add_tag":
+                current.add(tag)
+            else:
+                current.discard(tag)
+            lead.tags = f",{','.join(sorted(current))}," if current else None
+        elif payload.action == "assign_owner":
+            owner = (payload.owner or "").strip()
+            if not owner:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "owner vacío")
+            lead.owner_name = owner
+        elif payload.action == "clear_owner":
+            lead.owner_name = None
+        db.add(lead)
+        updated += 1
+    db.commit()
+    log_event("leads_bulk", workspace_id=user.workspace_id, action=payload.action, updated=updated)
+    return LeadsBulkResponse(updated=updated, skipped=skipped)
+
+
+@router.post("/bulk-proposals", response_model=BulkProposalsResponse)
+def leads_bulk_proposals(
+    payload: LeadsBulkRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BulkProposalsResponse:
+    """Genera propuestas para varios leads. Respeta el guardrail: solo las crea
+    en READY_FOR_REVIEW — enviar sigue requiriendo aprobación humana."""
+    service = ProposalService(db)
+    repo = LeadRepository(db)
+    created: list[int] = []
+    skipped: list[dict[str, Any]] = []
+    for lead_id in payload.ids:
+        lead = repo.get_for_workspace(user.workspace_id, lead_id)
+        if lead is None:
+            skipped.append({"lead_id": lead_id, "reason": "no encontrado"})
+            continue
+        try:
+            service.generate(user.workspace_id, lead_id)
+            created.append(lead_id)
+        except Exception as exc:  # noqa: BLE001
+            skipped.append({"lead_id": lead_id, "reason": str(exc)[:200]})
+    db.commit()
+    log_event("leads_bulk_proposals", workspace_id=user.workspace_id,
+              created=len(created), skipped=len(skipped))
+    return BulkProposalsResponse(created=created, skipped=skipped)
+
+
+# ------------------------------------------------------------- activity ------
+@router.get("/{lead_id}/activity", response_model=LeadActivityOut)
+def lead_activity(
+    lead_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LeadActivityOut:
+    """Timeline de evidencias reales del lead: creado, auditorías, propuestas y
+    eventos de email — nada sintético."""
+    from sqlalchemy import select
+
+    from app.models.emailing import Email, EmailEvent, Proposal
+    from app.models.website import WebsiteAudit
+
+    lead = LeadRepository(db).get_for_workspace(user.workspace_id, lead_id)
+    if lead is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Lead no encontrado")
+
+    items: list[LeadActivityItem] = [
+        LeadActivityItem(ts=lead.created_at, kind="created", label="Lead creado desde Google Places"),
+    ]
+    for audit in db.scalars(
+        select(WebsiteAudit)
+        .where(WebsiteAudit.lead_id == lead_id)
+        .order_by(WebsiteAudit.created_at.desc())
+    ).all():
+        items.append(LeadActivityItem(
+            ts=audit.created_at, kind="audited",
+            label=f"Website auditado · score {audit.overall_score}/10",
+            detail=audit.url,
+        ))
+    for proposal in db.scalars(
+        select(Proposal).where(Proposal.lead_id == lead_id).order_by(Proposal.updated_at.desc())
+    ).all():
+        items.append(LeadActivityItem(
+            ts=proposal.updated_at, kind="proposal",
+            label=f"Propuesta · {proposal.status}",
+            detail=proposal.subject,
+        ))
+    for event in db.scalars(
+        select(EmailEvent)
+        .join(Email, EmailEvent.email_id == Email.id)
+        .where(Email.lead_id == lead_id)
+        .order_by(EmailEvent.occurred_at.desc())
+    ).all():
+        items.append(LeadActivityItem(
+            ts=event.occurred_at, kind="email",
+            label=f"Email · {event.event_type}",
+            detail=(event.detail or "")[:160] or None,
+        ))
+    items.sort(key=lambda i: i.ts or lead.created_at, reverse=True)
+    return LeadActivityOut(items=items)

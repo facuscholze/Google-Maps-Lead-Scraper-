@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ORMModel(BaseModel):
@@ -189,6 +189,65 @@ class LeadSummary(ORMModel):
     recommended_action: str | None = None
     status: str
     confidence: float | None = None
+    # Fase 4: etiquetas (sin padding, ej ["frio","recontacto"]) + responsable
+    tags: list[str] = Field(default_factory=list)
+    owner_name: str | None = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _unpad_tags(cls, v: Any) -> list[str]:
+        # ORM stores ",frio,recontacto," (padded CSV for LIKE filtering).
+        if isinstance(v, str):
+            return [t for t in (part.strip() for part in v.split(",")) if t]
+        return v if isinstance(v, list) else []
+
+
+class LeadViewIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class LeadViewOut(ORMModel):
+    id: int
+    name: str
+    config_json: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+LeadsBulkAction = Literal[
+    "set_status", "archive", "unarchive", "add_tag", "remove_tag",
+    "assign_owner", "clear_owner",
+]
+
+
+class LeadsBulkRequest(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=1000)
+    action: LeadsBulkAction
+    status: str | None = None
+    tag: str | None = Field(default=None, max_length=60)
+    owner: str | None = Field(default=None, max_length=120)
+
+
+class LeadsBulkResponse(BaseModel):
+    updated: int
+    skipped: list[int] = Field(default_factory=list)
+
+
+class BulkProposalsResponse(BaseModel):
+    created: list[int] = Field(default_factory=list)   # lead_ids
+    skipped: list[dict[str, Any]] = Field(default_factory=list)  # {lead_id, reason}
+
+
+class LeadActivityItem(BaseModel):
+    ts: datetime
+    kind: str  # created|audited|proposal|email
+    label: str
+    detail: str | None = None
+
+
+class LeadActivityOut(BaseModel):
+    items: list[LeadActivityItem]
 
 
 class LeadDetail(LeadSummary):

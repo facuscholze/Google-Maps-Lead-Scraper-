@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -9,18 +10,26 @@ import {
   Building2,
   CalendarClock,
   ExternalLink,
+  FileSignature,
   Globe,
+  History,
   Lightbulb,
   MailPlus,
   MapPin,
   MessageSquare,
   Phone,
+  Plus,
+  RefreshCw,
   Sparkles,
   Star,
+  Tag,
   Target,
   ThumbsDown,
   ThumbsUp,
+  UserRound,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { AuditPayload, LeadDetail } from "@/lib/types";
 import {
@@ -62,14 +71,46 @@ export default function LeadDetailPage() {
     queryFn: () => api.get(`/api/leads/${id}/audit`),
     enabled: !!id,
   });
+  const { data: activity } = useQuery<{ items: ActivityItem[] }>({
+    queryKey: ["lead-activity", id],
+    queryFn: () => api.get(`/api/leads/${id}/activity`),
+    enabled: !!id,
+  });
+  const { data: proposals } = useQuery<ProposalSummary[]>({
+    queryKey: ["proposals", "lead", id],
+    queryFn: () => api.get(`/api/proposals?lead_id=${id}`),
+    enabled: !!id,
+  });
 
   const generate = useMutation({
     mutationFn: () => api.post<{ id: number }>(`/api/leads/${id}/generate-proposal`),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Propuesta generada — la revisás antes de enviarla");
       router.push(`/proposals/${res.id}`);
     },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "No se pudo generar"),
   });
+
+  const reaudit = useMutation({
+    mutationFn: () => api.post(`/api/leads/${id}/audit`),
+    onSuccess: () => {
+      toast.success("Re-auditoría lanzada", { description: "Tarda unos segundos; se actualiza sola al volver." });
+      queryClient.invalidateQueries({ queryKey: ["lead-audit", id] });
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "No se pudo reauditar"),
+  });
+
+  async function updateLead(action: string, extra?: Record<string, string>) {
+    try {
+      await api.post("/api/leads/bulk", { ids: [Number(id)], action, ...extra });
+      await queryClient.invalidateQueries({ queryKey: ["lead", id] });
+      await queryClient.invalidateQueries({ queryKey: ["leads"] });
+      toast.success("Lead actualizado");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo actualizar");
+    }
+  }
 
   if (isLoading) return <Spinner label="Cargando lead…" />;
   if (isError || !lead) return <ErrorNote message={error instanceof Error ? error.message : "No encontramos este lead"} />;
@@ -144,6 +185,71 @@ export default function LeadDetailPage() {
           {lead.email_confidence && (
             <ProfileRow icon={<span />} label="Confianza" value={lead.email_confidence} />
           )}
+        </Card>
+
+        {/* Ownership + tags (Fase 4) */}
+        <Card>
+          <h2 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
+            <UserRound size={18} className="text-gold" /> Gestión
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.14em] text-taupe font-semibold mb-1.5">Responsable</div>
+              <div className="flex items-center gap-2">
+                <span className="chip bg-sand">{lead.owner_name ?? "sin asignar"}</span>
+                <button
+                  type="button"
+                  className="text-xs text-gold underline underline-offset-2"
+                  onClick={() => {
+                    const o = window.prompt("Responsable (dejá vacío para quitar):", lead.owner_name ?? "");
+                    if (o == null) return;
+                    if (o.trim()) void updateLead("assign_owner", { owner: o });
+                    else void updateLead("clear_owner");
+                  }}
+                >
+                  editar
+                </button>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.14em] text-taupe font-semibold mb-1.5">Etiquetas</div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(lead.tags ?? []).map((t) => (
+                  <span key={t} className="chip border border-sandline bg-sand">
+                    <Tag size={10} className="text-gold" /> {t}
+                    <button
+                      type="button"
+                      aria-label={`Quitar tag ${t}`}
+                      className="text-taupe hover:text-[#C5221F]"
+                      onClick={() => void updateLead("remove_tag", { tag: t })}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  className="chip border border-dashed border-sandline text-taupe hover:text-ink"
+                  onClick={() => {
+                    const t = window.prompt("Nueva etiqueta:");
+                    if (t?.trim()) void updateLead("add_tag", { tag: t });
+                  }}
+                >
+                  <Plus size={11} /> agregar
+                </button>
+              </div>
+            </div>
+            {lead.website && (
+              <button
+                type="button"
+                className="btn-outline !py-2 text-xs"
+                onClick={() => reaudit.mutate()}
+                disabled={reaudit.isPending}
+              >
+                <RefreshCw size={13} className={reaudit.isPending ? "animate-spin" : ""} /> Re-auditar website
+              </button>
+            )}
+          </div>
         </Card>
 
         {/* Recommended */}
@@ -261,6 +367,48 @@ export default function LeadDetailPage() {
         </>
       )}
 
+      {/* Proposals for this lead */}
+      {proposals && proposals.length > 0 && (
+        <Card>
+          <h2 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
+            <FileSignature size={18} className="text-gold" /> Propuestas
+          </h2>
+          <div className="space-y-2">
+            {proposals.map((p) => (
+              <Link key={p.id} href={`/proposals/${p.id}`} className="flex items-center justify-between gap-3 rounded-xl border border-sandline px-4 py-3 transition hover:border-gold/50">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">{p.subject}</div>
+                  <div className="text-xs text-taupe">{new Date(p.created_at).toLocaleDateString("es-UY")}</div>
+                </div>
+                <span className="chip bg-night text-white shrink-0">{p.status.replaceAll("_", " ")}</span>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Activity timeline */}
+      {activity && activity.items.length > 0 && (
+        <Card>
+          <h2 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
+            <History size={18} className="text-gold" /> Historial
+          </h2>
+          <ol className="relative space-y-4 border-l border-sandline pl-5">
+            {activity.items.map((item, i) => (
+              <li key={i} className="relative">
+                <span
+                  className="absolute -left-[27px] top-1 h-2.5 w-2.5 rounded-full border-2 border-white"
+                  style={{ background: item.kind === "email" ? "#B08D3E" : item.kind === "proposal" ? "#7A6A4A" : item.kind === "audited" ? "#1E8E3E" : "#111111" }}
+                />
+                <div className="text-sm font-medium">{item.label}</div>
+                {item.detail && <div className="text-xs text-taupe">{item.detail}</div>}
+                <div className="text-[11px] text-taupe/70">{item.ts ? new Date(item.ts).toLocaleString("es-UY") : ""}</div>
+              </li>
+            ))}
+          </ol>
+        </Card>
+      )}
+
       {/* Opportunities */}
       {opportunities.length > 0 && (
         <Card className="border-gold/30">
@@ -298,6 +446,10 @@ export default function LeadDetailPage() {
     </div>
   );
 }
+
+// Fase 4: tipos locales para timeline/propuestas
+interface ActivityItem { ts: string | null; kind: string; label: string; detail?: string | null }
+interface ProposalSummary { id: number; subject: string; status: string; created_at: string }
 
 function ProfileRow({ icon, label, value, link }: { icon: React.ReactNode; label: string; value: string; link?: string }) {
   return (

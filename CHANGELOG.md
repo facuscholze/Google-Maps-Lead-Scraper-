@@ -4,6 +4,38 @@ Todas las novedades relevantes del rediseño, por fase. Formato: [Keep a Changel
 
 ## [Unreleased]
 
+### Fase 4 — Leads Pro: selección, vistas a cuenta, evidencia y bulk (2026-10-14)
+- **Tabla de leads pro (`/leads`):** selección por fila con barra flotante de
+  acciones masivas; visibilidad de columnas (dropdown) con persistencia en la
+  vista activa; headers ordenables server-side; fila de filtros extended
+  (ciudad, categoría, tag, responsable) plegable; conteos y paginación con
+  `page_size` hasta 500 (corrige el cap de la vista mapa, bug D3.5).
+- **Vistas guardadas en la cuenta (`lead_views`):** migración automática de
+  las locales al primer uso, upsert por nombre, CRUD vía `GET/POST/PUT/DELETE
+  /api/lead-views` (D4.1).
+- **Bulk actions (`POST /api/leads/bulk`):** set_status, archivar/
+  desarchivar (nunca borrar), agregar/quitar tags (padded CSV, D4.2),
+  asignar/quitar responsable (string libre, D4.3). Respuesta `{updated,
+  skipped}`. Export CSV/Sheets de la selección reusa `selection=selected&ids`.
+- **Bulk propuestas (`POST /api/leads/bulk-proposals`):** genera propuestas
+  por lead con errores por-ítem en `skipped[]`; todas quedan
+  `READY_FOR_REVIEW` (guardrail humano intacto, D4.5).
+- **Detalle de lead conmás control:** ownership + etiquetas editables inline,
+  re-auditoría manual del website, propuestas del lead y **historial real**
+  (`GET /api/leads/{id}/activity`: creado/auditorías/propuestas/emails,
+  nada sintético — D4.6).
+- **Backend aditivo:** `Lead.tags` + `Lead.owner_name` (migración
+  `a3b8f5c29d1e`, batch_alter sqlite), `lead_views` nueva tabla, filtros
+  city/category/tag/owner en list+export, sort whitelist con 422 (D4.4).
+- **Bug fix transversal (encontrado en E2E F4, pre-F4):** comparación
+  tz naive/aware rompía la búsqueda tras calificar leads (`website_service`,
+  rotación de cuentas). Helper `as_utc()` en `app/utils/text.py` (D4.7).
+- **E2E verificado en vivo** (mock): búsqueda grilla COMPLETED 25/25 celdas,
+  96 leads, $0.875; bulk tags/owner → filtros matchean; sort asc/422;
+  vistas CRUD; `page_size=500` devuelve 144 items; timeline con auditoría.
+- Tests: `test_leads_pro.py` (bulk, filtros, sort, vistas, actividad) +
+  suite completa verde; tsc --noEmit + next build limpios.
+
 ### Fase 3 — UX de descubrimiento: mapa, área y barrido en vivo (2026-10-14)
 - **Mapa Leaflet** (infra `components/map/`): wrapper imperativo SSR-safe con
   tiles conscientes del tema (OSM / CartoDB Dark); estilos de marca para pines,

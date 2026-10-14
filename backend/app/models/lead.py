@@ -51,6 +51,11 @@ class Lead(Base, PKMixin, TimestampMixin):
     recommended_service: Mapped[str | None] = mapped_column(String(255), nullable=True)
     recommended_action: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="NEW", nullable=False, index=True)
+    # Fase 4 · Leads Pro: etiquetas libres + responsable asignado.
+    # `tags` keeps a padded, lowercase CSV (",frio,recontacto,") so a portable
+    # LIKE '%,tag,%' filter works on every supported DB (no JSON functions).
+    tags: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    owner_name: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     why_this_lead: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -80,3 +85,17 @@ class Lead(Base, PKMixin, TimestampMixin):
     proposals: Mapped[list["Proposal"]] = relationship(
         back_populates="lead", cascade="all, delete-orphan"
     )
+
+
+class LeadView(Base, PKMixin, TimestampMixin):
+    """Vista guardada de la tabla de leads (filtros + columnas configuradas),
+    por workspace (Fase 4 · D4.1). El `config_json` es libre a propósito: es un
+    estado de UI, no de dominio."""
+    __tablename__ = "lead_views"
+    __table_args__ = (UniqueConstraint("workspace_id", "name", name="uq_lead_views_ws_name"),)
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

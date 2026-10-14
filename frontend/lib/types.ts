@@ -1,49 +1,24 @@
-// Shared API types (mirror of backend schemas).
+// Shared API types.
+//
+// Los tipos de respuesta están **generados desde el OpenAPI del backend**
+// (`lib/api-types.ts`, regenerar con `npm run gen:types`). Este archivo los
+// re-exporta con refinamientos de unión donde el schema queda demasiado
+// laxo (p. ej. `lead_temperature`), y mantiene a mano solo los tipos que el
+// OpenAPI no describe con precisión (Dashboard, detalles con JSON libre).
+
+import type { components } from "./api-types";
+
+export type { paths, components } from "./api-types";
 
 export type Temperature = "HOT" | "WARM" | "COLD" | "LOW";
 
-export interface SearchSummary {
-  id: number;
-  query: string;
-  location?: string | null;
+export type SearchSummary = components["schemas"]["SearchOut"] & {
   status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
-  results_total: number;
-  results_qualified: number;
-  websites_analyzed: number;
-  emails_found: number;
-  hot_count: number;
-  warm_count: number;
-  cold_count: number;
-  error_message?: string | null;
-  created_at: string;
-  completed_at?: string | null;
-  duration_seconds?: number | null;
-}
+};
 
-export interface LeadSummary {
-  id: number;
-  place_id: string;
-  business_name: string;
-  category?: string | null;
-  city?: string | null;
-  country?: string | null;
-  website?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  email_confidence?: string | null;
-  rating?: number | null;
-  reviews_count: number;
-  website_status: string;
-  website_score?: number | null;
-  lead_score?: number | null;
-  opportunity_score?: number | null;
+export type LeadSummary = Omit<components["schemas"]["LeadSummary"], "lead_temperature"> & {
   lead_temperature?: Temperature | null;
-  priority?: string | null;
-  recommended_service?: string | null;
-  recommended_action?: string | null;
-  status: string;
-  confidence?: number | null;
-}
+};
 
 export interface LeadDetail extends LeadSummary {
   primary_type?: string | null;
@@ -117,43 +92,13 @@ export interface ProposalSummary {
   updated_at: string;
 }
 
-export interface Job {
-  id: number;
-  search_id?: number | null;
-  job_type: string;
+export type Job = Omit<components["schemas"]["JobOut"], "status"> & {
   status: "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
-  progress: number;
-  current_step?: string | null;
-  total: number;
-  done: number;
-  error_message?: string | null;
-}
+};
 
-export interface EmailAccount {
-  id: number;
-  email: string;
-  provider: string;
-  status: string;
-  daily_limit: number;
-  sent_today: number;
-  sent_date?: string | null;
-  last_sent_at?: string | null;
-  display_name?: string | null;
-}
+export type EmailAccount = components["schemas"]["EmailAccountOut"];
 
-export interface EmailOut {
-  id: number;
-  lead_id: number;
-  proposal_id?: number | null;
-  to_email: string;
-  from_email?: string | null;
-  subject?: string | null;
-  status: string;
-  scheduled_at?: string | null;
-  sent_at?: string | null;
-  error?: string | null;
-  created_at: string;
-}
+export type EmailOut = components["schemas"]["EmailOut"];
 
 export interface Dashboard {
   cards: {

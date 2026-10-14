@@ -50,22 +50,22 @@ export default function DashboardPage() {
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard label="Total leads" value={cards.total_leads} icon={<Users size={20} />} />
-        <StatCard label="Potential clients" value={cards.potential_clients} icon={<Target size={20} />} accent />
-        <StatCard label="HOT leads" value={cards.hot_leads} icon={<Flame size={20} />} hint={`${cards.warm_leads} warm`} />
-        <StatCard label="Websites audited" value={cards.websites_audited} icon={<Globe size={20} />} />
-        <StatCard label="Emails found" value={cards.emails_found} icon={<AtSign size={20} />} />
-        <StatCard label="Proposals ready" value={cards.proposals_ready} icon={<FileText size={20} />} />
-        <StatCard label="Emails sent" value={cards.emails_sent} icon={<MailCheck size={20} />} />
-        <StatCard label="Replies" value={cards.replies} icon={<MessageCircle size={20} />} />
-        <StatCard label="Avg. scores" value="—" icon={<Eye size={20} />} hint={scoreHint(data)} />
+        <StatCard label="Clientes potenciales" value={cards.potential_clients} icon={<Target size={20} />} accent />
+        <StatCard label="Leads calientes" value={cards.hot_leads} icon={<Flame size={20} />} hint={`${cards.warm_leads} tibios`} />
+        <StatCard label="Websites auditados" value={cards.websites_audited} icon={<Globe size={20} />} />
+        <StatCard label="Emails encontrados" value={cards.emails_found} icon={<AtSign size={20} />} />
+        <StatCard label="Propuestas listas" value={cards.proposals_ready} icon={<FileText size={20} />} />
+        <StatCard label="Emails enviados" value={cards.emails_sent} icon={<MailCheck size={20} />} />
+        <StatCard label="Respuestas" value={cards.replies} icon={<MessageCircle size={20} />} />
+        <StatCard label="Promedios" value="—" icon={<Eye size={20} />} hint={scoreHint(data)} />
       </div>
 
       {/* Averages row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { label: "Average Lead Score", value: data.averages.avg_lead_score },
-          { label: "Average Website Score", value: data.averages.avg_website_score },
-          { label: "Average Opportunity Score", value: data.averages.avg_opportunity_score },
+          { label: "Score de lead promedio", value: data.averages.avg_lead_score },
+          { label: "Score de website promedio", value: data.averages.avg_website_score },
+          { label: "Score de oportunidad promedio", value: data.averages.avg_opportunity_score },
         ].map((item) => (
           <div key={item.label} className="card p-4 flex items-center justify-between">
             <span className="text-xs uppercase tracking-[0.14em] text-taupe font-semibold">{item.label}</span>
@@ -92,9 +92,9 @@ export default function DashboardPage() {
                     <div
                       className={cn(
                         "h-full rounded-md transition-all duration-700",
-                        idx >= funnel.potential_clients === false ? "bg-gold/60" : "bg-ink/80",
-                        step.key === "potential_clients" && "bg-gold",
-                        step.key === "replied" && "bg-[#1E8E3E]/70"
+                        "bg-foreground/70",
+                        step.key === "potential_clients" && "bg-primary",
+                        step.key === "replied" && "bg-emerald-500/70"
                       )}
                       style={{ width: `${width}%` }}
                     />

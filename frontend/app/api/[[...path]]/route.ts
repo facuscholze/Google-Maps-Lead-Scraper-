@@ -69,6 +69,17 @@ function targetUrl(request: NextRequest): string {
 function forwardableRequestHeaders(request: NextRequest): Headers {
   const headers = new Headers(request.headers);
   for (const header of STRIP_REQUEST_HEADERS) headers.delete(header);
+  // X-Forwarded-For propagation: the App Router gives us no raw socket IP, so
+  // we pass through whatever the edge (Vercel/Cloudflare/your reverse proxy)
+  // already set. The backend only TRUSTS this header when the peer IP — i.e.
+  // this Next.js server — is in TRUSTED_PROXIES, so browsers cannot spoof
+  // their way around the rate limiter.
+  const edgeClient = request.headers.get("x-forwarded-for");
+  if (edgeClient) {
+    headers.set("x-forwarded-for", edgeClient);
+  } else {
+    headers.delete("x-forwarded-for");
+  }
   return headers;
 }
 

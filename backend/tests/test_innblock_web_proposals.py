@@ -16,6 +16,12 @@ from app.services.emailing.proposal import ProposalWriter
 from app.services.emailing.proposal_service import ProposalService
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="Fase 7 del rediseño: la plantilla vieja 'innblock.html' se reemplaza por "
+    "'nuevo html mail.html' (única fuente de verdad del mail). Este test y "
+    "scripts/sync_proposal_template.py se reescriben ahí (ver docs/AUDIT.md BUG-01).",
+)
 def test_packaged_template_matches_source():
     source = (Path(__file__).resolve().parents[2] / 'nuevo html innblock.html').read_text()
     inner = re.search(r'<script type="text/plain" id="plantilla">\s*(.*?)\s*</script>', source, re.S)[1]

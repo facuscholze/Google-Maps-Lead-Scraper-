@@ -2,58 +2,145 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
+/* ------------------------------------------------------------------ tokens
+ * innblock · oscuro por defecto (la marca vive en negro/rojo).
+ * Valores HSL en canales para usar con <alpha-value> en Tailwind.
+ * Fuente de verdad de marca: "nuevo html mail.html".
+ * ----------------------------------------------------------------------- */
+@layer base {
+  :root {
+    --background: 0 0% 95%;          /* #F2F2F2 — fondo del mail */
+    --foreground: 0 0% 3%;           /* #070707 — negro marca */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3%;
+    --primary: 0 100% 42.5%;         /* #D90000 — rojo marca */
+    --primary-foreground: 0 0% 100%;
+    --brand-bright: 4 100% 59%;      /* #FF3B30 */
+    --secondary: 0 0% 91%;
+    --secondary-foreground: 0 0% 8%;
+    --muted: 0 0% 91%;
+    --muted-foreground: 240 2% 42%;
+    --accent: 0 83% 95%;             /* tint rojo suave */
+    --accent-foreground: 0 84% 42%;
+    --destructive: 4 100% 59%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 89%;              /* #e3e3e3 del mail */
+    --input: 0 0% 82%;
+    --ring: 0 100% 50%;
+    --well: 0 0% 94%;
+    --radius: 0.5rem;
+    color-scheme: light;
+  }
+
+  .dark {
+    --background: 240 6% 4%;         /* negro profundo innblock */
+    --foreground: 0 0% 96%;
+    --card: 240 5% 7.5%;
+    --card-foreground: 0 0% 96%;
+    --popover: 240 6% 5.5%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 0 100% 42.5%;         /* #D90000 también en oscuro */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4% 13%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 240 4% 12%;
+    --muted-foreground: 240 3% 58%;
+    --accent: 0 58% 15%;             /* pozo rojo oscuro */
+    --accent-foreground: 4 100% 66%;
+    --destructive: 4 100% 59%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 14%;
+    --input: 240 4% 18%;
+    --ring: 0 100% 50%;
+    --well: 240 6% 5.5%;
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.35);
+    border-radius: 999px;
+  }
+
+  html,
+  body {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+
+  /* Foco visible siempre (AA) */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
-html,
-body {
-  background: #f4f1ea;
-  color: #111111;
-}
-
+/* --------------------------------------------------- utilidades de marca */
 .font-display {
-  font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  font-family: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-/* thin elegant scrollbars */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #d8d0bd transparent;
+/* Logo geométrico del mail: núcleo negro + anillos rojos */
+.brand-portal {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border: 3px solid #070707;
+  background: #070707;
+  box-shadow: 0 0 0 2px #d90000;
 }
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-*::-webkit-scrollbar-thumb {
-  background: #d8d0bd;
-  border-radius: 999px;
+.dark .brand-portal {
+  border-color: #f5f5f5;
+  background: #f5f5f5;
+  box-shadow: 0 0 0 2px #d90000;
 }
 
 @layer components {
   .card {
-    @apply bg-white rounded-2xl border border-sandline shadow-card;
+    @apply rounded-xl border border-border bg-card text-card-foreground shadow-card;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-full font-medium text-sm px-5 py-2.5 transition-all disabled:opacity-50 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-gold/40;
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-5 py-2.5 text-sm font-semibold transition-all disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
   .btn-primary {
-    @apply btn bg-ink text-white hover:bg-black;
+    @apply btn bg-primary text-primary-foreground hover:bg-[#B80000] active:translate-y-px;
   }
   .btn-gold {
-    @apply btn bg-gold text-white hover:bg-[#997a34];
+    /* legacy → ahora es el rojo de marca */
+    @apply btn bg-primary text-primary-foreground hover:bg-[#B80000];
   }
   .btn-outline {
-    @apply btn border border-ink/15 text-ink bg-white hover:border-ink/40;
+    @apply btn border border-input bg-transparent text-foreground hover:bg-secondary;
   }
   .btn-ghost {
-    @apply btn text-ink/70 hover:bg-ink/5;
+    @apply btn text-muted-foreground hover:bg-secondary hover:text-foreground;
   }
   .input {
-    @apply w-full rounded-xl border border-ink/15 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40 focus:border-gold transition;
+    @apply w-full rounded-md border border-input bg-card px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring transition;
   }
   .label {
-    @apply block text-[11px] uppercase tracking-[0.14em] text-taupe font-semibold mb-1.5;
+    @apply mb-1.5 block font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
   }
   .chip {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold;

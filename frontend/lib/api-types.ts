@@ -1417,6 +1417,8 @@ export interface components {
             body_plain?: string | null;
             /** Ai Model */
             ai_model?: string | null;
+            /** Ai Reasoning */
+            ai_reasoning?: Record<string, never> | null;
             /** Version */
             version: number;
             /** Approved At */

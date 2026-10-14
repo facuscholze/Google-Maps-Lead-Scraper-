@@ -357,6 +357,8 @@ class ProposalOut(ORMModel):
     body_html: str | None = None
     body_plain: str | None = None
     ai_model: str | None = None
+    # F7/D7.3: razonamiento + evidence_ledger (procedencia Places/audit)
+    ai_reasoning: dict[str, Any] | None = None
     version: int
     approved_at: datetime | None = None
     created_at: datetime

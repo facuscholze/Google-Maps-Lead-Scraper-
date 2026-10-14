@@ -1,6 +1,7 @@
 """Pydantic models for AI structured output (spec §61)."""
 from __future__ import annotations
 
+from typing import Any
 from pydantic import BaseModel, Field
 
 
@@ -37,7 +38,7 @@ class AIProposal(BaseModel):
     subject: str
     opening: str
     personalized_observation: str
-    strengths: list[str] = []
+    strengths: list[Any] = []  # str (legacy LLM) o dict anclado {text, evidence, kind}
     opportunities: list[dict] = []
     recommended_solution: str
     call_to_action: str

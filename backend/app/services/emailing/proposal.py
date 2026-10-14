@@ -72,7 +72,11 @@ class ProposalWriter:
             "website_score": website_score,
             "opening": f"Hola {name},",
             "personalized_observation": observation,
-            "strengths": [str(s) for s in strengths[:4]],
+            # F7/D7.1: las fortalezas viajan como dicts anclados (text/evidence/kind);
+            # el renderer las formatea — acá se conserva la trazabilidad.
+            "strengths": strengths[:4] if strengths and isinstance(strengths[0], dict) else [
+                {"text": str(s), "evidence": None, "kind": "FACT"} for s in strengths[:4]
+            ],
             "opportunities": [
                 {
                     "title": o.get("title"),

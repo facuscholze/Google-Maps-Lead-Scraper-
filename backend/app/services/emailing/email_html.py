@@ -34,6 +34,17 @@ def _safe_link(value: str) -> str:
     return _esc(value)
 
 
+def _strength_items(strengths: Any) -> list[dict[str, Any]]:
+    """F7/D7.1: soporta fortalezas como str (legacy) o dict {text, evidence, kind}."""
+    items: list[dict[str, Any]] = []
+    for s in strengths or []:
+        if isinstance(s, dict):
+            items.append({"text": s.get("text", ""), "evidence": s.get("evidence"), "kind": s.get("kind", "FACT")})
+        elif s:
+            items.append({"text": str(s), "evidence": None, "kind": "FACT"})
+    return items
+
+
 def render_proposal_email(content: dict[str, Any]) -> str:
     template = _TEMPLATE_PATH.read_text(encoding="utf-8")
     opportunities = "".join(
@@ -60,7 +71,14 @@ def render_proposal_email(content: dict[str, Any]) -> str:
         "servicioRecomendado": _esc(content.get("recommended_service") or "Nuestra propuesta web"),
         "solucion": _paragraphs(content.get("recommended_solution")),
         "oportunidades": opportunities,
-        "fortalezas": "".join(_paragraphs(s) for s in (content.get("strengths") or [])[:4]),
+        # F7: fortalezas dict (text + evidence) → texto + evidencia en línea tenue
+        "fortalezas": "".join(
+            _paragraphs(s.get("text", "")) + ((
+                f'<p style="margin:-8px 0 14px;color:#777777;font-size:12px;">'
+                f'{_esc(s["evidence"])}</p>'
+            ) if s.get("evidence") else "")
+            for s in _strength_items(content.get("strengths"))[:4]
+        ),
         "servicios": services,
         "llamadaAccion": _esc(content.get("call_to_action") or "¿Conversamos sobre tu próxima web?"),
         "firma": _paragraphs(content.get("signature") or f"Saludos,\nEquipo {settings.proposal_brand}"),
@@ -77,9 +95,10 @@ def render_plain_text(content: dict[str, Any]) -> str:
     opening = content.get("opening") or ""
     observation = content.get("personalized_observation") or ""
     lines.extend([opening.strip(), "", observation.strip(), ""])
-    if content.get("strengths"):
+    strengths = _strength_items(content.get("strengths"))
+    if strengths:
         lines.append("Lo que valoramos de tu presencia digital:")
-        lines.extend(f"• {s}" for s in content["strengths"][:4])
+        lines.extend(f"• {s['text']}" for s in strengths[:4])
         lines.append("")
     if content.get("opportunities"):
         lines.append("Oportunidades detectadas:")

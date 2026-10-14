@@ -13,12 +13,13 @@ import {
   Monitor,
   RefreshCw,
   Send,
+  ShieldCheck,
   Smartphone,
   Trash2,
   PenLine,
 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import type { EmailAccount, ProposalSummary } from "@/lib/types";
+import type { EmailAccount, Opportunity, ProposalSummary } from "@/lib/types";
 import { Button, Card, ErrorNote, Spinner, StatusChip, cn } from "@/components/ui";
 
 type Tab = "desktop" | "mobile" | "html" | "plain";
@@ -249,6 +250,9 @@ export default function ProposalDetailPage() {
         </>
       )}
 
+      {/* F7/D7.3: trazabilidad ítem a ítem — qué dato salió de dónde */}
+      <EvidenceCard proposal={proposal} />
+
       {/* Send panel */}
       {isApproved && (
         <Card className="border-gold/40">
@@ -297,5 +301,140 @@ export default function ProposalDetailPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- evidence --
+   Card F7: cada afirmación del email atada a su evidencia real. */
+
+type AnchoredStrength = { text?: string; evidence?: string | null; kind?: string };
+
+function normalizeStrengths(list: ProposalSummary["strengths"]): AnchoredStrength[] {
+  return (list ?? [])
+    .map((s): AnchoredStrength => (typeof s === "string" ? { text: s } : (s ?? {})))
+    .filter((s) => (s.text ?? "").trim().length > 0);
+}
+
+function KindChip({ kind }: { kind?: string }) {
+  const isFact = (kind ?? "FACT") === "FACT";
+  return (
+    <span
+      className={cn(
+        "text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide shrink-0",
+        isFact ? "bg-[#E6F4EA] text-[#1E8E3E]" : "bg-gold/15 text-[#7a5c00]"
+      )}
+      title={isFact ? "Dato verificable" : "Inferencia marcada como tal"}
+    >
+      {isFact ? "Dato" : "Inferencia"}
+    </span>
+  );
+}
+
+function EvidenceCard({ proposal }: { proposal: ProposalSummary }) {
+  const ledger = proposal.ai_reasoning?.evidence_ledger;
+  const strengths = normalizeStrengths(proposal.strengths);
+  const opportunities: Opportunity[] = proposal.opportunities ?? [];
+  if (!ledger && strengths.length === 0 && opportunities.length === 0) return null;
+
+  const places = ledger?.places;
+  const audit = ledger?.audit;
+
+  return (
+    <Card className="space-y-4 border-[#1E8E3E]/30">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-display text-lg font-semibold flex items-center gap-2">
+          <ShieldCheck size={17} className="text-[#1E8E3E]" /> Evidencia detrás de esta propuesta
+        </h2>
+        <p className="text-xs text-taupe max-w-md">
+          Nada se afirma sin respaldo: cada dato sale de Google Maps (API oficial) o de nuestra
+          auditoría del sitio. Lo que no tiene evidencia real no llega al correo.
+        </p>
+      </div>
+
+      {/* Procedencia */}
+      <div className="grid sm:grid-cols-2 gap-3 text-sm">
+        <div className="rounded-lg bg-sand px-3 py-2.5">
+          <div className="text-xs font-semibold text-taupe uppercase tracking-wide mb-1">Ficha comercial</div>
+          <p className="text-ink/85">{places?.source ?? "Google Maps Platform — Places API (New)"}</p>
+          {(places?.rating != null || places?.reviews != null) && (
+            <p className="text-xs text-taupe mt-1">
+              Rating {places?.rating ?? "—"} · {places?.reviews ?? "—"} reseñas (dato oficial de la ficha)
+            </p>
+          )}
+        </div>
+        <div className="rounded-lg bg-sand px-3 py-2.5">
+          <div className="text-xs font-semibold text-taupe uppercase tracking-wide mb-1">
+            {audit?.audit_id ? "Auditoría propia del sitio" : "Sin sitio auditado"}
+          </div>
+          {audit?.audit_id ? (
+            <>
+              <p className="text-ink/85">
+                Puntaje {audit.overall_score ?? "—"}/10 · {audit.findings_count ?? 0} hallazgos
+                {audit.screenshots_count ? ` · ${audit.screenshots_count} capturas` : ""}
+              </p>
+              <p className="text-xs text-taupe mt-1">
+                {audit.url ?? ""}
+                {audit.audited_at ? ` · ${new Date(audit.audited_at).toLocaleDateString("es-AR")}` : ""}
+              </p>
+              <Link href={`/leads/${proposal.lead_id}`} className="text-xs text-gold hover:underline">
+                Ver auditoría completa →
+              </Link>
+            </>
+          ) : (
+            <p className="text-ink/85">La ficha consultada no incluye URL web; la propuesta lo dice así de claro.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Fortalezas ancladas */}
+      {strengths.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-taupe uppercase tracking-wide mb-2">
+            Fortalezas citadas en el email ({strengths.length})
+          </div>
+          <ul className="space-y-1.5">
+            {strengths.map((s, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm">
+                <KindChip kind={s.kind} />
+                <div className="min-w-0">
+                  <span className="text-ink/90">{s.text}</span>
+                  {s.evidence && <span className="block text-xs text-taupe">↳ {s.evidence}</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Oportunidades (todas con evidencia — D7.2) */}
+      {opportunities.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-taupe uppercase tracking-wide mb-2">
+            Oportunidades propuestas ({opportunities.length}) — todas con evidencia
+          </div>
+          <ul className="space-y-1.5">
+            {opportunities.map((o, i) => (
+              <li key={i} className="text-sm">
+                <span className="text-ink/90 font-medium">{o.title}</span>
+                {o.opportunity && <span className="text-ink/70"> — {o.opportunity}</span>}
+                {o.evidence && <span className="block text-xs text-taupe">↳ {o.evidence}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* URLs fuente del audit */}
+      {!!audit?.source_urls?.length && (
+        <div className="text-xs text-taupe border-t border-sandline pt-3">
+          <span className="font-semibold">Páginas analizadas: </span>
+          {audit.source_urls.slice(0, 5).map((u) => (
+            <a key={u} href={u} target="_blank" rel="noreferrer" className="text-gold hover:underline mr-2 break-all">
+              {u.replace(/^https?:\/\//, "")}
+            </a>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }

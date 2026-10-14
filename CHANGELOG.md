@@ -4,6 +4,32 @@ Todas las novedades relevantes del rediseño, por fase. Formato: [Keep a Changel
 
 ## [Unreleased]
 
+### Fase 7 — Propuestas sólo con evidencia real (2026-10-14)
+- **Grounding mecánico en el service** (`ProposalService._ground_proposal`,
+  D7.1/D7.2): las fortalezas viajan como `{text, evidence, kind}` (nunca
+  strings sueltas — el auditor ya persistía ese shape) y toda oportunidad
+  sin `evidence` se descarta antes del email: mejor menos ítems y todos
+  reales. El HTML (plantilla innblock) y el texto plano se re-renderizan con
+  los ítems ya purgados: lo persistido es exactamente lo que sale por
+  correo, cualquiera sea el provider (rule-based u OpenAI compatible).
+- **Ledger de evidencia (D7.3)**: `ai_reasoning.evidence_ledger` documenta
+  la procedencia de cada dato — Google Maps Platform Places API (New)/Text
+  Search (rating, reseñas), auditoría propia (id, versión, fecha, URL,
+  puntaje, findings, capturas, URLs fuente) y conteos exactos de ítems
+  usados. `ProposalOut.ai_reasoning` ahora se expone en la API.
+- **UI `/proposals/[id]`**: card "Evidencia detrás de esta propuesta" con
+  procedencia Places/auditoría, fortalezas y oportunidades con su evidencia
+  visible y chips Dato/Inferencia, enlace a la auditoría completa y URLs
+  fuente. El aprobador humano ve de dónde salió cada afirmación ANTES de
+  aprobar.
+- El email muestra la evidencia de cada fortaleza en línea tenue (HTML) y
+  las oportunidades citan su respaldo (también en plain text). Ediciones
+  humanas fuera del anclaje automático por diseño (D7.4, spec §41).
+- Tests: `test_proposals_evidence.py` (5) — strengths ancladas con evidencia
+  presente en el HTML, purga de oportunidades inventadas (E2E y unitario),
+  ledger consistente con lo persistido, caso sin-sitio honesto.
+  Suite completa verde (142); tsc + build OK; E2E vivo verificado.
+
 ### Fase 6 — Scoring configurable y explicable (2026-10-14)
 - **Configuración de scoring por workspace** (`scoring_configs`, migración
   `c7f3a19bd5e2`): pesos multiplicativos 0–3 por categoría (reputación, reseñas,

@@ -93,6 +93,26 @@ export interface AuditPayload {
   audited_at?: string | null;
 }
 
+/** F7/D7.3: procedencia de cada dato que usa la propuesta (anti-inventos). */
+export interface EvidenceLedger {
+  places?: {
+    source?: string;
+    rating?: number | null;
+    reviews?: number | null;
+  };
+  audit?: {
+    audit_id?: number | null;
+    audit_version?: string | null;
+    audited_at?: string | null;
+    url?: string | null;
+    overall_score?: number | null;
+    findings_count?: number;
+    source_urls?: string[];
+    screenshots_count?: number;
+  };
+  grounded_items?: { strengths?: number; opportunities?: number };
+}
+
 export interface ProposalSummary {
   id: number;
   lead_id: number;
@@ -101,7 +121,7 @@ export interface ProposalSummary {
   subject?: string | null;
   opening?: string | null;
   personalized_observation?: string | null;
-  strengths?: Array<string | { text?: string }>;
+  strengths?: Array<string | { text?: string; evidence?: string | null; kind?: string }>;
   opportunities?: Opportunity[];
   recommended_solution?: string | null;
   call_to_action?: string | null;
@@ -109,6 +129,7 @@ export interface ProposalSummary {
   body_html?: string | null;
   body_plain?: string | null;
   ai_model?: string | null;
+  ai_reasoning?: Record<string, unknown> & { evidence_ledger?: EvidenceLedger };
   version: number;
   created_at: string;
   updated_at: string;

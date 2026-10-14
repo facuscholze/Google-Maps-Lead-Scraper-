@@ -175,6 +175,10 @@ class LeadSummary(ORMModel):
     email_confidence: str | None = None
     rating: float | None = None
     reviews_count: int
+    # Coords needed by the Leads map view (F3) — cheap to send, no privacy concern
+    # (public business locations from Places).
+    latitude: float | None = None
+    longitude: float | None = None
     website_status: str
     website_score: float | None = None
     lead_score: int | None = None

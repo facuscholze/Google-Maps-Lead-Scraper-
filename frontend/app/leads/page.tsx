@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -10,12 +11,22 @@ import {
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { Download, FileSpreadsheet, Loader2, SearchX } from "lucide-react";
+import { BookmarkPlus, Download, FileSpreadsheet, List, Loader2, Map as MapIcon, SearchX, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { LeadSummary, Temperature } from "@/lib/types";
 import { Card, EmptyState, ErrorNote, Spinner, StatusChip, TemperatureChip, cn } from "@/components/ui";
 import { SheetsResultNote } from "@/components/sheets-note";
 import { useExportToSheets } from "@/lib/use-export-to-sheets";
+
+const LeadMap = dynamic(() => import("@/components/map/lead-map"), {
+  ssr: false,
+  loading: () => (
+    <div className="grid h-[380px] w-full place-items-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
+      Cargando mapa…
+    </div>
+  ),
+});
 
 const TEMPERATURES: Temperature[] = ["HOT", "WARM", "COLD", "LOW"];
 
@@ -44,6 +55,59 @@ function LeadsPageInner() {
   const [minScore, setMinScore] = useState<string>("");
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(0); // 0-indexed
+  const [view, setView] = useState<"list" | "map">("list");
+
+  // ---- vistas guardadas (localStorage, mínima real — DECISIONS D3.3) ------
+  type SavedView = {
+    name: string;
+    temperature?: string;
+    hasEmail?: boolean;
+    hasWebsite?: boolean;
+    status?: string;
+    minScore?: string;
+    q?: string;
+  };
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("avascho_lead_views");
+      if (raw) setSavedViews(JSON.parse(raw));
+    } catch {
+      /* json roto → arrancamos vacío */
+    }
+  }, []);
+  function persistViews(views: SavedView[]) {
+    setSavedViews(views);
+    window.localStorage.setItem("avascho_lead_views", JSON.stringify(views));
+  }
+  function saveCurrentView() {
+    const name = window.prompt("Nombre de la vista (ej: «HOT con email, score ≥70»)");
+    if (!name?.trim()) return;
+    const exists = savedViews.some((v) => v.name === name.trim());
+    const view: SavedView = {
+      name: name.trim(),
+      temperature, hasEmail, hasWebsite,
+      status: status || undefined, minScore: minScore || undefined,
+      q: queryText.trim() || undefined,
+    };
+    persistViews(exists
+      ? savedViews.map((v) => (v.name === view.name ? view : v))
+      : [...savedViews, view]);
+    toast.success(exists ? "Vista actualizada" : "Vista guardada", {
+      description: view.name,
+    });
+  }
+  function applyView(v: SavedView) {
+    setTemperature(v.temperature);
+    setHasEmail(v.hasEmail);
+    setHasWebsite(v.hasWebsite);
+    setStatus(v.status ?? "");
+    setMinScore(v.minScore ?? "");
+    setQueryText(v.q ?? "");
+  }
+  function deleteView(name: string) {
+    persistViews(savedViews.filter((v) => v.name !== name));
+  }
 
   const hasActiveFilters =
     !!temperature || hasEmail !== undefined || hasWebsite !== undefined || !!status || !!minScore || !!queryText.trim();
@@ -93,6 +157,20 @@ function LeadsPageInner() {
   });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
+
+  // El mapa pide una población amplia (no solo la página actual): hasta 500
+  // leads con los mismos filtros activos. Solo se dispara en vista mapa.
+  const mapParams = useMemo(() => {
+    const p = new URLSearchParams(filterParams);
+    p.set("page_size", "500");
+    p.set("page", "1");
+    return p.toString();
+  }, [filterParams]);
+  const mapQuery = useQuery<{ items: LeadSummary[]; total: number }>({
+    queryKey: ["leads-map", mapParams],
+    queryFn: () => api.get<{ items: LeadSummary[]; total: number }>(`/api/leads?${mapParams}`),
+    enabled: view === "map",
+  });
 
   // ---- export CSV (FIX 5) -------------------------------------------------
   // El <a> no sirve: /api/leads/export exige `Authorization: Bearer <token>` y
@@ -173,6 +251,33 @@ function LeadsPageInner() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* toggle lista/mapa */}
+          <div className="flex rounded-md border border-border bg-card p-0.5" role="tablist" aria-label="Vista">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "list"}
+              onClick={() => setView("list")}
+              className={cn(
+                "flex min-h-[36px] items-center gap-1.5 rounded px-3 text-xs font-semibold transition",
+                view === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <List size={14} /> Lista
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "map"}
+              onClick={() => setView("map")}
+              className={cn(
+                "flex min-h-[36px] items-center gap-1.5 rounded px-3 text-xs font-semibold transition",
+                view === "map" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <MapIcon size={14} /> Mapa
+            </button>
+          </div>
           <input
             className="input !w-56"
             placeholder="Buscar empresa…"
@@ -262,7 +367,37 @@ function LeadsPageInner() {
             Limpiar filtros
           </button>
         )}
+        <button
+          type="button"
+          className="chip border border-border bg-card text-muted-foreground hover:text-foreground"
+          onClick={saveCurrentView}
+          title="Guardar la combinación actual de filtros"
+        >
+          <BookmarkPlus size={12} /> Guardar vista
+        </button>
       </div>
+
+      {/* vistas guardadas */}
+      {savedViews.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Vistas</span>
+          {savedViews.map((v) => (
+            <span key={v.name} className="group chip border border-border bg-card text-foreground">
+              <button type="button" className="hover:text-primary" onClick={() => applyView(v)}>
+                {v.name}
+              </button>
+              <button
+                type="button"
+                aria-label={`Eliminar vista ${v.name}`}
+                className="text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive"
+                onClick={() => deleteView(v.name)}
+              >
+                <Trash2 size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* avisos de exportación (CSV / Google Sheets) */}
       <ErrorNote message={exportError ?? undefined} />
@@ -280,6 +415,29 @@ function LeadsPageInner() {
           subtitle="Probá relajar los filtros o lanzá una nueva búsqueda."
           action={<Link href="/searches/new" className="btn-primary">Nueva búsqueda</Link>}
         />
+      ) : view === "map" ? (
+        <div className="space-y-2">
+          {mapQuery.isLoading ? (
+            <Spinner label="Cargando leads…" />
+          ) : mapQuery.isError ? (
+            <ErrorNote message="No pudimos cargar los leads del mapa." />
+          ) : (
+            <>
+              <LeadMap
+                leads={mapQuery.data?.items ?? []}
+                className="h-[420px] w-full overflow-hidden rounded-xl border border-border"
+              />
+              <p className="text-xs text-muted-foreground">
+                {countPins(mapQuery.data?.items ?? [])} de {mapQuery.data?.items.length ?? 0} leads
+                tienen coordenadas
+                {(mapQuery.data?.total ?? 0) > 500
+                  ? " · se muestran los primeros 500 resultados del filtro"
+                  : ""}
+                · el color marca la temperatura.
+              </p>
+            </>
+          )}
+        </div>
       ) : (
         <>
           {/* Desktop table */}
@@ -372,6 +530,10 @@ function LeadsPageInner() {
       )}
     </div>
   );
+}
+
+function countPins(items: LeadSummary[]): number {
+  return items.filter((l) => typeof l.latitude === "number" && typeof l.longitude === "number").length;
 }
 
 function TriStateFilter({

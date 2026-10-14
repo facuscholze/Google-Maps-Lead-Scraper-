@@ -150,3 +150,39 @@ son host compartido y fusionarían negocios distintos (lo detectó
 `test_full_pipeline` al caer `emails_found`). Los merges secundarios se logean
 (`lead_deduped{by=phone|domain}`) y cuentan en `deduped_count`; nunca fusionan
 silenciosamente leads creados por búsquedas anteriores.
+
+## D3 — 2026-10-14 (Fase 3 · UX de descubrimiento)
+
+### D3.1 Leaflet imperativo, sin react-leaflet ✅
+`components/map/base-map.tsx` crea el `L.map` con imports dinámicos de Leaflet
+(CSS incluido) dentro de un efecto client-side. *Por qué:* cero fricción con
+React 19/Next 15 (react-leaflet v5 era muy nuevo), control total del ciclo de
+vida (StrictMode-safe: remove() en cleanup) y un solo punto donde tocar tiles
+consciente del tema (OSM en claro · CartoDB Dark Matter en oscuro, ambas
+gratuitas con la atribución de licencia visible).
+
+### D3.2 Toolbar de dibujo propia (no la de leaflet-draw) ✅
+Se usan los handlers `L.Draw.Rectangle/Circle/Polygon` pero con botones propios
+en es-AR + estilo innblock y hints contextuales. La toolbar default de
+leaflet-draw está en inglés y no respeta el sistema de diseño. Formas emitidas
+matchean 1:1 el schema GeoArea del backend (rect → sw/ne, circle →
+center+radius_km, polygon → puntos).
+
+### D3.3 Vistas guardadas en localStorage (mínima real) ✅
+`/leads` guarda combinaciones de filtros nombradas en `localStorage`
+(`avascho_lead_views`). Es deliberadamente simple: Fase 4 (Leads Pro) lleva las
+vistas al backend con columnas/bulk y ahí se migra. No bloquear F3 por una API
+de vistas que aún no existe.
+
+### D3.4 SSE con fallback a polling ✅
+`lib/use-search-events.ts` usa EventSource (token por query param, D2.2) y si
+el stream nunca abre (proxy que corta, pestaña dormida) degrada a polling de
+`/status` cada 2.5 s. La UI muestra el canal activo (chip "en vivo"/"polling").
+Polling-only se mantiene como red de seguridad permanente, no como modo
+"viejo". EventSource parece muerto → el `done` del stream cierra ambos caminos.
+
+### D3.5 El mapa de leads usa hasta 500 resultados del filtro, no la página ✅
+Ver 25 pines de una página confundiría ("¿mi barrido dio solo esto?"). Se hace
+una segunda query con `page_size=500` solo al entrar en vista mapa, se informa
+el cap en el pie y cuántos leads tienen coordenadas. El límite 500 protege el
+browser (markercluster `chunkedLoading`).

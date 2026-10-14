@@ -4,6 +4,29 @@ Todas las novedades relevantes del rediseño, por fase. Formato: [Keep a Changel
 
 ## [Unreleased]
 
+### Fase 3 — UX de descubrimiento: mapa, área y barrido en vivo (2026-10-14)
+- **Mapa Leaflet** (infra `components/map/`): wrapper imperativo SSR-safe con
+  tiles conscientes del tema (OSM / CartoDB Dark); estilos de marca para pines,
+  clusters, controles y atribución. Sin react-leaflet (D3.1).
+- **`/searches/new` reescrita:** dos modos — *Por texto* (ciudad + rubro) y
+  *Por mapa* con editor de área (rectángulo/círculo/polígono, herramientas
+  propias en es-AR). Preview v2 conectada a la API: modo, nº de celdas,
+  llamadas y costo con rango, tope de presupuesto (input), alertas (60/query,
+  área excedida) y disclaimer de billing. Mobile-first: mapa a ancho completo.
+- **`/searches/[id]` en vivo:** progreso por SSE (`use-search-events`, D3.4)
+  con fallback a polling y chip de canal; barra de grilla celda a celda;
+  panel de costo real vs estimado vs tope; cancelación con confirmación
+  (Radix Dialog) y relanzado; métricas incl. dedupeados en modo grilla.
+- **`/leads`:** vista mapa con pines coloreados por temperatura + clustering
+  (hasta 500 del filtro activo, pie honesto) y **vistas guardadas** nombradas
+  en localStorage (aplicar/actualizar/borrar) — mínima real, D3.3.
+- **Backend aditivo:** `LeadSummary` expone `latitude/longitude` (necesario
+  para pines; datos públicos de Places). Tipos `lib/api-types.ts` regenerados.
+- **E2E verificado en vivo:** preview grid (12 celdas, $0.42–1.26), búsqueda
+  por grilla completa con SSE (24 celdas → 240 únicos, $0.84 real vs $0.70
+  estimado, 231 websites, 31 emails), páginas `/searches/new` y `/leads` 200.
+- tsc --noEmit + next build limpios.
+
 ### Fase 2 — Backend de búsqueda (2026-10-14)
 - **Grilla geo→searchText** (`app/services/geo_grid.py`): celdas rectangulares
   solapadas para áreas rect/circle/polygon; una consulta Text Search por celda

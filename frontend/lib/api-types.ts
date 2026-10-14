@@ -934,6 +934,10 @@ export interface components {
             rating?: number | null;
             /** Reviews Count */
             reviews_count: number;
+            /** Latitude */
+            latitude?: number | null;
+            /** Longitude */
+            longitude?: number | null;
             /** Website Status */
             website_status: string;
             /** Website Score */
@@ -958,10 +962,6 @@ export interface components {
             primary_type?: string | null;
             /** Address */
             address?: string | null;
-            /** Latitude */
-            latitude?: number | null;
-            /** Longitude */
-            longitude?: number | null;
             /** International Phone */
             international_phone?: string | null;
             /** Email Source Url */
@@ -1032,6 +1032,10 @@ export interface components {
             rating?: number | null;
             /** Reviews Count */
             reviews_count: number;
+            /** Latitude */
+            latitude?: number | null;
+            /** Longitude */
+            longitude?: number | null;
             /** Website Status */
             website_status: string;
             /** Website Score */

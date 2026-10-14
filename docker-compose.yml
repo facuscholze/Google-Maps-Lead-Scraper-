@@ -2,7 +2,8 @@
 #
 #   docker compose up --build
 #
-# Services: postgres (db), FastAPI backend (:8000), Next.js frontend (:3000).
+# Services: postgres (db), redis (broker), FastAPI backend (:8000),
+# Celery worker (searches + scheduled email queue), Next.js frontend (:3000).
 # The frontend proxies /api/* to the backend container, so the browser only
 # ever talks to Next.js (same origin — no CORS issues, no secrets in the UI).
 #
@@ -28,19 +29,36 @@ services:
       timeout: 3s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   backend:
     build: ./backend
     env_file: ./backend/.env
     environment:
       # Point the backend at the compose Postgres (overrides backend/.env default).
       DATABASE_URL: postgresql+psycopg2://avascho:avascho@db:5432/avascho
+      REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: http://localhost:3000
       FRONTEND_URL: http://localhost:3000
-      EXECUTION_MODE: inline
+      # D5: compose runs on Celery (worker service below); the API dispatches
+      # searches and the email queue drains via Celery beat.
+      EXECUTION_MODE: celery
+      # The Next.js proxy forwards edge X-Forwarded-For; docker's default pool
+      # is 172.16.0.0/12, so rate limiting keys on the real client, not the proxy.
+      TRUSTED_PROXIES: "127.0.0.1,::1,172.16.0.0/12,192.168.0.0/16,10.0.0.0/8"
     ports:
       - "8000:8000"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
@@ -53,6 +71,26 @@ services:
       timeout: 5s
       retries: 30
       start_period: 20s
+
+  worker:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://avascho:avascho@db:5432/avascho
+      REDIS_URL: redis://redis:6379/0
+      EXECUTION_MODE: celery
+    depends_on:
+      # Start after the backend ran `alembic upgrade head` (it gates on its
+      # own healthcheck), otherwise the first tasks may race the migrations.
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # -B = embedded beat (single-node deploy); beat only schedules
+    # process_email_queue — variable send delays live in the queue service.
+    command: >
+      celery -A app.workers.celery_app:celery_app worker -B
+      --loglevel=info --concurrency=2
 
   frontend:
     build: ./frontend

@@ -1,6 +1,8 @@
 """AvaScho Lead Intelligence — FastAPI application factory."""
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -33,7 +35,26 @@ async def lifespan(app: FastAPI):
             raise
     else:
         log_event("app_started", mode="production")
+
+    # Email queue scheduler (BUG-09): inline mode has no Celery beat, so the
+    # app drains due emails itself. Celery mode uses the worker's beat instead.
+    scheduler_task = None
+    if (
+        settings.execution_mode == "inline"
+        and settings.queue_scheduler_enabled
+        and settings.app_env != "test"
+    ):
+        from app.services.emailing.scheduler import queue_scheduler_loop
+
+        scheduler_task = asyncio.create_task(queue_scheduler_loop())
+
     yield
+
+    if scheduler_task is not None:
+        scheduler_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await scheduler_task
+        log_event("queue_scheduler_stopped")
 
 
 def create_app() -> FastAPI:

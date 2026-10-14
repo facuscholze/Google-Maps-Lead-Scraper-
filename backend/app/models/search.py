@@ -28,6 +28,27 @@ class Search(Base, PKMixin, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), default="PENDING", nullable=False, index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- Search mode / area ------------------------------------------------
+    # "text": single paginated query · "grid": rectangular-cells sweep over a
+    # drawn area (geo_json: {type: circle|rect|polygon, ...}).
+    mode: Mapped[str] = mapped_column(String(10), default="text", nullable=False)
+    geo_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # --- Budget & API cost accounting ---------------------------------------
+    budget_cap_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimated_api_calls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    api_calls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    api_cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    budget_exhausted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # --- Grid progress / quality -------------------------------------------
+    grid_total_cells: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    grid_done_cells: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    grid_capped_cells: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    deduped_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     results_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     results_qualified: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     websites_analyzed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

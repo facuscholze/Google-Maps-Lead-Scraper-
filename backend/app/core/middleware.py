@@ -5,6 +5,7 @@ should pair this with a gateway/Redis-backed limiter.
 """
 from __future__ import annotations
 
+import ipaddress
 import time
 from collections import defaultdict, deque
 from typing import Awaitable, Callable
@@ -40,6 +41,43 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _is_trusted_peer(host: str) -> bool:
+    entries = settings.trusted_proxy_set
+    if host in entries:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    for entry in entries:
+        if "/" not in entry:
+            continue
+        try:
+            if ip in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def client_ip(request: Request) -> str:
+    """Real client IP: trust X-Forwarded-For only from configured proxies.
+
+    Without this, every request arriving via Nginx or the Next.js route-handler
+    proxy is bucketed under the proxy's IP — one shared quota for all users,
+    and a trivial DoS for everyone else. Peers are matched by IP or CIDR
+    (docker-compose uses the 172.16.0.0/12 pool).
+    """
+    host = request.client.host if request.client else "unknown"
+    if host != "unknown" and _is_trusted_peer(host):
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first
+    return host
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Sliding window limiter keyed by client IP."""
 
@@ -50,7 +88,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._hits: dict[str, deque[float]] = defaultdict(deque)
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        client = request.client.host if request.client else "unknown"
+        client = client_ip(request)
         now = time.monotonic()
         bucket = self._hits[client]
         while bucket and now - bucket[0] > self._window:

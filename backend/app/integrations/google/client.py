@@ -108,10 +108,20 @@ class GooglePlacesClient:
         page_size: int = 20,
         language: str = "es",
         region_code: str | None = None,
+        location_restriction: dict[str, Any] | None = None,
     ) -> PlacesSearchResult:
+        """Run a Text Search (New) query.
+
+        Official limits (verified 2026-10-14):
+        - ``pageSize`` max 20 results per call.
+        - a query returns **at most 60 results** (≈3 pages) — we stop there and
+          mark ``truncated`` so the caller (grid sweep) can act on it.
+        - ``location_restriction`` is the body field documented as
+          ``locationRestriction`` (we support the rectangle shape).
+        """
         if not query.strip():
             raise ValueError("query is required")
-        max_results = min(max(max_results, 1), settings.max_results_per_search)
+        max_results = min(max(max_results, 1), 60)  # official per-query cap
         result = PlacesSearchResult()
         token: str | None = None
         api_calls = 0
@@ -126,6 +136,8 @@ class GooglePlacesClient:
                 }
                 if region_code:
                     body["regionCode"] = region_code
+                if location_restriction:
+                    body["locationRestriction"] = location_restriction
                 if token:
                     body["pageToken"] = token
 
@@ -142,7 +154,7 @@ class GooglePlacesClient:
                 if len(result.places) >= max_results:
                     result.truncated = True
                     break
-                if result.pages_fetched >= 20:  # safety valve — never loop forever
+                if result.pages_fetched >= 3:  # 60-result official cap
                     result.truncated = True
                     break
         return result

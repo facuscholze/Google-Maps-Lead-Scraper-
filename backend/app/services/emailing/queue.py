@@ -66,7 +66,7 @@ class EmailQueueService:
 
     def _within_allowed_window(self, when: datetime) -> bool:
         local = when.astimezone(self._timezone())
-        if local.weekday() not in settings.working_day_set:
+        if local.isoweekday() not in settings.working_day_set:
             return False
         return settings.allowed_hours_start <= local.hour < settings.allowed_hours_end
 

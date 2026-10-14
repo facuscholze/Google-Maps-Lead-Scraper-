@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ORMModel(BaseModel):
@@ -24,9 +24,72 @@ class TokenResponse(BaseModel):
 
 
 # ---------------------------------------------------------------- searches ----
+class GeoRect(BaseModel):
+    """Axis-aligned bounds. Coordinates: [lat, lng] pairs."""
+    sw: list[float] = Field(min_length=2, max_length=2)
+    ne: list[float] = Field(min_length=2, max_length=2)
+
+    @model_validator(mode="after")
+    def _check_order(self) -> "GeoRect":
+        if not (-90 <= self.sw[0] < self.ne[0] <= 90 and -180 <= self.sw[1] < self.ne[1] <= 180):
+            raise ValueError("rect inválido: se espera sw al sudoeste de ne")
+        return self
+
+
+class GeoCircle(BaseModel):
+    center: list[float] = Field(min_length=2, max_length=2)
+    radius_km: float = Field(gt=0, le=200)
+
+    @model_validator(mode="after")
+    def _check_center(self) -> "GeoCircle":
+        lat, lng = self.center
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            raise ValueError("center fuera de rango")
+        return self
+
+
+class GeoPolygon(BaseModel):
+    points: list[list[float]] = Field(min_length=3, max_length=128)
+
+    @model_validator(mode="after")
+    def _check_points(self) -> "GeoPolygon":
+        for p in self.points:
+            if len(p) != 2 or not (-90 <= p[0] <= 90 and -180 <= p[1] <= 180):
+                raise ValueError("punto de polígono fuera de rango")
+        return self
+
+
+class GeoArea(BaseModel):
+    """Exactamente una forma: rect | circle | polygon."""
+    rect: GeoRect | None = None
+    circle: GeoCircle | None = None
+    polygon: GeoPolygon | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "GeoArea":
+        n = sum(x is not None for x in (self.rect, self.circle, self.polygon))
+        if n != 1:
+            raise ValueError("geo debe tener exactamente una forma (rect, circle o polygon)")
+        return self
+
+    def to_spec(self) -> dict[str, Any]:
+        """Formato que entiende ``geo_grid.cells_from_geo``."""
+        if self.rect is not None:
+            return {"type": "rect", "sw": list(self.rect.sw), "ne": list(self.rect.ne)}
+        if self.circle is not None:
+            return {
+                "type": "circle",
+                "center": list(self.circle.center),
+                "radius_m": self.circle.radius_km * 1000.0,
+            }
+        return {"type": "polygon", "points": [list(p) for p in self.polygon.points]}  # type: ignore[union-attr]
+
+
 class SearchCreate(BaseModel):
     category: str = Field(min_length=2, max_length=255)
     location: str | None = Field(default=None, max_length=255)
+    geo: GeoArea | None = None
+    budget_cap_usd: float | None = Field(default=None, gt=0, le=10000)
     max_results: int = Field(default=100, ge=1, le=500)
     min_reviews: int = Field(default=0, ge=0)
     max_reviews: int | None = Field(default=None, ge=1)
@@ -39,11 +102,18 @@ class SearchCreate(BaseModel):
 class SearchPreview(BaseModel):
     query: str
     location: str | None
+    mode: Literal["text", "grid"]
     max_results: int
     min_reviews: int
     max_reviews: int | None
     min_rating: float
     estimated_api_calls: int
+    estimated_api_calls_max: int = 0
+    estimated_cost_usd: float = 0.0
+    estimated_cost_max_usd: float = 0.0
+    grid_cells: int = 0
+    budget_cap_usd: float | None = None
+    warnings: list[str] = Field(default_factory=list)
     disclaimer: str = (
         "Esta búsqueda puede generar múltiples solicitudes a la API de Google Places. "
         "El uso de la API no es necesariamente gratuito."
@@ -51,6 +121,19 @@ class SearchPreview(BaseModel):
 
 
 class SearchOut(ORMModel):
+    mode: str
+    geo_json: dict[str, Any] | None = None
+    budget_cap_usd: float | None = None
+    estimated_api_calls: int
+    estimated_cost_usd: float | None = None  # NULL in rows predating the estimator
+    api_calls: int
+    api_cost_usd: float
+    budget_exhausted: bool
+    grid_total_cells: int
+    grid_done_cells: int
+    grid_capped_cells: int
+    deduped_count: int
+    cancel_requested: bool
     id: int
     query: str
     location: str | None = None

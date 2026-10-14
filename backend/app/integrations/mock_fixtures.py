@@ -150,16 +150,28 @@ def variant_slug(base_slug: str, variant: int) -> str:
     return base_slug if variant == 0 else f"{base_slug}-{variant + 1}"
 
 
-def generate_places(query: str, max_results: int, seed: int = 7) -> list[dict[str, Any]]:
+def generate_places(
+    query: str,
+    max_results: int,
+    seed: int = 7,
+    rect: tuple[float, float, float, float] | None = None,
+) -> list[dict[str, Any]]:
     """Generate up to max_results synthetic Google-like places (stable per seed).
 
     When the requested volume exceeds the base profile table, extra variants of
     the same profiles are produced with unique slugs/emails so that pagination
     and deduplication logic is exercised realistically.
+
+    With ``rect`` (sw_lat, sw_lng, ne_lat, ne_lng) only places whose position
+    falls inside the rectangle are returned — positions derive from the profile
+    index only (never from the rect), so overlapping cells legitimately see the
+    same place twice: exactly what grid dedupe must handle.
     """
     n = len(_PROFILES)
     places: list[dict[str, Any]] = []
-    for index in range(max_results):
+    # The virtual "world" is a fixed lattice of candidates; cells sample it.
+    candidate_count = max(max_results * 4 if rect else max_results, 60)
+    for index in range(candidate_count):
         source_index = (seed + index) % n
         variant = (seed + index) // n
         p = dict(_PROFILES[source_index])
@@ -169,7 +181,14 @@ def generate_places(query: str, max_results: int, seed: int = 7) -> list[dict[st
             p["slug"] = variant_slug(p["slug"], variant)
             p["rating"] = max(3.0, round(p["rating"] - 0.05 * variant, 1))
             p["reviews"] = max(5, p["reviews"] + (index * 3) % 25)
-        places.append(place_from_profile(p, query, index))
+        place = place_from_profile(p, query, index)
+        if rect is not None:
+            loc = place["location"]
+            if not (rect[0] <= loc["latitude"] <= rect[2] and rect[1] <= loc["longitude"] <= rect[3]):
+                continue
+        places.append(place)
+        if len(places) >= max_results:
+            break
     return places
 
 

@@ -39,3 +39,8 @@ build/
 # Data dumps / exports (keep them out of git unless required)
 exports/
 *.csv.tmp
+
+# Local SQLite databases (BUG-10: never commit the dev DB)
+*.db
+*.sqlite
+*.sqlite3

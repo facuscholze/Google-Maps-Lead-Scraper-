@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     search_provider: str = "auto"  # auto | google | mock
     max_results_per_search: int = 100
     google_request_timeout: float = 20.0
+    # Price list check 2026-10-14 — Text Search Enterprise, USD per 1.000 calls.
+    # Override it if Google updates the pricing list (never hardcode in code).
+    # https://developers.google.com/maps/billing-and-pricing/pricing#places-pricing
+    places_price_per_1k_usd: float = 35.0
+
+    # --- Grid sweep (area searches) ------------------------------------------------
+    grid_cell_km: float = 1.5        # edge of each sweep cell
+    grid_max_cells: int = 120        # hard ceiling of cells per search (cost brake)
+    grid_subdivide: bool = True      # subdivide cells that hit the 60-result cap
+    grid_max_subdivision_depth: int = 2
 
     # --- Crawler ---------------------------------------------------------------
     max_pages_per_domain: int = 10
@@ -90,8 +100,15 @@ class Settings(BaseSettings):
     max_send_delay_seconds: int = 420
     allowed_hours_start: int = 9
     allowed_hours_end: int = 19
-    working_days: str = "1,2,3,4,5"  # ISO weekday numbers, comma separated
+    # Proxies whose X-Forwarded-For we trust for rate limiting / logs.
+    trusted_proxies: str = "127.0.0.1,::1"
+
+    working_days: str = "1,2,3,4,5"  # ISO weekdays: 1=lunes … 7=domingo
     allow_mock_email_sending: bool = True
+    # Inline email queue scheduler (dev/demo without celery). Sends pending mail
+    # every `queue_scheduler_interval_seconds`. Off for tests / explicit deploys.
+    queue_scheduler_enabled: bool = True
+    queue_scheduler_interval_seconds: int = 45
 
     # --- Filters defaults -------------------------------------------------------------
     default_max_results: int = 100
@@ -100,13 +117,18 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_working_days(cls, v: str) -> str:
         days = [int(x.strip()) for x in v.split(",") if x.strip()]
-        if not days or any(d < 0 or d > 6 for d in days):
-            raise ValueError("working_days must contain ISO weekday numbers 0-6")
+        if not days or any(d < 1 or d > 7 for d in days):
+            raise ValueError("working_days must contain ISO weekday numbers 1-7 (1=Mon, 7=Sun)")
         return ",".join(str(d) for d in days)
 
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def trusted_proxy_set(self) -> set[str]:
+        """Peers from whom we trust X-Forwarded-For (Nginx/Next rewrites)."""
+        return {o.strip() for o in self.trusted_proxies.split(",") if o.strip()}
 
     @property
     def working_day_set(self) -> set[int]:

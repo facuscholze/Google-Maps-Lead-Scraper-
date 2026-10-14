@@ -19,6 +19,8 @@ Todas las novedades relevantes del rediseño, por fase. Formato: [Keep a Changel
 - **Rescore siempre explícito (D6.4)**: guardar config no modifica leads; el
   usuario dispara el recompute (determinista, local, sin costo de API, sin
   tocar datos observados), con confirmación y resultado resumido.
+  Endpoints: `POST /api/leads/{id}/rescore` para re-puntuar un lead puntual
+  desde su detalle o por bulk futuro.
 - **UI `/settings/scoring`**: sliders por categoría y por umbral, guardar /
   restablecer defaults / re-puntuar todo, enlace desde `/settings`. Pipeline
   pasa la config vigente al scoring (carga una vez por búsqueda).

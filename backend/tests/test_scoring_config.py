@@ -140,3 +140,25 @@ def test_config_roundtrip_reset(client, auth):
     assert r.status_code == 204
     r = client.get("/api/scoring-config", headers=auth)
     assert r.json()["is_default"] is True and r.json()["hot_min"] == 80
+
+
+def test_endpoint_rescore_lead_single(db_session, workspace, client, auth, demo_user):
+    """POST /leads/{id}/rescore — recálculo explícito per-lead (F6/D6.4)."""
+    lead = _lead(db_session, workspace, rating=4.6, reviews_count=120, website="https://y.test")
+    from app.services.lead_service import score_lead
+    from app.services.scoring_config_service import load_scoring_config
+
+    score_lead(db_session, lead, config=load_scoring_config(db_session, workspace.id))
+    db_session.commit()
+    before = lead.lead_score
+
+    client.put("/api/scoring-config", json={"weights": {"reputation": 2.0}}, headers=auth)
+    r = client.post(f"/api/leads/{lead.id}/rescore", headers=auth)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["lead_score"] != before
+    rep = next(b for b in data["score_breakdown"]["lead"] if b["category"] == "reputation")
+    assert rep["weight"] == 2.0 and rep["delta"] == rep["base_delta"] * 2
+
+    r = client.post("/api/leads/999999/rescore", headers=auth)
+    assert r.status_code == 404

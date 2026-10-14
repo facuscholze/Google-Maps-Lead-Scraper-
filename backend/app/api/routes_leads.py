@@ -525,6 +525,35 @@ def lead_audit_screenshot(
     return FileResponse(path, media_type="image/jpeg", filename=path.name)
 
 
+# ------------------------------------------------------------- rescore (F6) --
+def _rescore_for_lead(db: Session, lead: Lead) -> dict:
+    """Recalcula y persiste el score de un lead con la config vigente del workspace."""
+    from app.services.lead_service import score_lead
+    from app.services.scoring_config_service import load_scoring_config
+
+    cfg = load_scoring_config(db, lead.workspace_id)
+    return score_lead(db, lead, config=cfg)
+
+
+@router.post("/{lead_id}/rescore", response_model=LeadDetail)
+def rescore_lead(
+    lead_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LeadDetail:
+    """Re-puntuar un lead con la config de scoring vigente (F6/D6.4).
+
+    Determinista y local: usa los datos persistidos; jamás llama a Places."""
+    lead = LeadRepository(db).get_for_workspace(user.workspace_id, lead_id)
+    if lead is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Lead no encontrado")
+    _rescore_for_lead(db, lead)
+    db.commit()
+    db.refresh(lead)
+    log_event("lead_rescored", lead_id=lead_id, workspace_id=user.workspace_id)
+    return LeadDetail.model_validate(lead)
+
+
 # ------------------------------------------------------------- bulk actions --
 @router.post("/bulk", response_model=LeadsBulkResponse)
 def leads_bulk_action(

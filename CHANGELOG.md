@@ -4,6 +4,28 @@ Todas las novedades relevantes del rediseño, por fase. Formato: [Keep a Changel
 
 ## [Unreleased]
 
+### Fase 6 — Scoring configurable y explicable (2026-10-14)
+- **Configuración de scoring por workspace** (`scoring_configs`, migración
+  `c7f3a19bd5e2`): pesos multiplicativos 0–3 por categoría (reputación, reseñas,
+  presencia web, calidad web, oportunidades, teléfono, email) y umbrales
+  HOT/WARM/COLD con validación estricta. Opt-in: sin fila, defaults idénticos
+  a lo vigente (comportamiento invariable, D6.1).
+- **API nueva**: `GET/PUT/DELETE /api/scoring-config` · `POST
+  /api/scoring-config/rescore` (por ids o global, cap 500, ignora archivados)
+  · `GET /api/scoring-config/categories` (metadatos es-AR para la UI).
+- **Breakdown con peso aplicado**: cada ítem del `score_breakdown` registra
+  `base_delta`, `delta`, `weight` y `category` — el detalle de lead muestra
+  "×1.50" junto al delta cuando una señal está ponderada (D6.2).
+- **Rescore siempre explícito (D6.4)**: guardar config no modifica leads; el
+  usuario dispara el recompute (determinista, local, sin costo de API, sin
+  tocar datos observados), con confirmación y resultado resumido.
+- **UI `/settings/scoring`**: sliders por categoría y por umbral, guardar /
+  restablecer defaults / re-puntuar todo, enlace desde `/settings`. Pipeline
+  pasa la config vigente al scoring (carga una vez por búsqueda).
+- Tests: `test_scoring_config.py` (resolver de pesos con clamp, umbrales
+  custom, ponderación con meta, roundtrip API, validaciones 422, rescore por
+  ids y global, reset a defaults) — suite completa verde; tsc + build 12/12.
+
 ### Fase 5 — Website audit con evidencia + screenshots (2026-10-14)
 - **Findings persistidos**: `website_audits.findings` (migración `b5c9e2d41f07`)
   guarda la evidencia completa — problema, evidencia textual, `source_url`,

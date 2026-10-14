@@ -590,18 +590,27 @@ function ProfileRow({ icon, label, value, link }: { icon: React.ReactNode; label
   );
 }
 
-function ScoreList({ title, items }: { title: string; items: Array<{ delta?: number; label?: string; detail?: string }> }) {
+function ScoreList({ title, items }: { title: string; items: Array<{ delta?: number; label?: string; detail?: string; base_delta?: number; weight?: number; category?: string }> }) {
   if (!items.length) return null;
   return (
     <div className="space-y-1">
       <div className="text-[10px] uppercase tracking-[0.16em] text-taupe font-bold">{title}</div>
-      {items.slice(0, 8).map((item, i) => (
-        <div key={i} className="flex items-center gap-2 text-xs py-0.5">
-          <span className="w-7 text-right text-[#1E8E3E] font-bold tabular-nums shrink-0">+{item.delta ?? 0}</span>
-          <span className="text-ink/80">{item.label}</span>
-          <span className="text-taupe truncate">{item.detail}</span>
-        </div>
-      ))}
+      {items.slice(0, 8).map((item, i) => {
+        const weighted = item.weight !== undefined && item.weight !== 1 && item.base_delta !== undefined;
+        return (
+          <div key={i} className="flex items-center gap-2 text-xs py-0.5">
+            <span className="w-12 text-right text-[#1E8E3E] font-bold tabular-nums shrink-0">
+              +{item.delta ?? 0}
+              {weighted && <span className="ml-1 font-normal text-[10px] text-taupe" title={`Ponderado ×${item.weight} sobre ${item.base_delta}`}>×{item.weight}</span>}
+            </span>
+            <span className="text-ink/80">
+              {item.label}
+              {weighted && <span className="ml-1 text-[10px] text-taupe/70">({item.base_delta} base)</span>}
+            </span>
+            <span className="text-taupe truncate">{item.detail}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

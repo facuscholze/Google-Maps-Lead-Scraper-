@@ -2,6 +2,12 @@
 
 Every score returns a `breakdown` with human-readable reasons and deltas.
 The rules are deterministic and grounded in place + audit evidence only.
+
+Fase 6 (D6.2): cada regla pertenece a una **categoría** y su aporte se puede
+ponderar por workspace con `weights` (multiplicador 0..3, default 1.0). Los
+umbrales de temperatura también son configurables (default 80/60/40). El
+breakdown registra `base_delta`, `weight` y `category` además del `delta`
+final, para que la UI muestre exactamente qué se ponderó — nada se inventa.
 """
 from __future__ import annotations
 
@@ -14,15 +20,49 @@ from app.core.enums import (
 )
 from app.services.analysis.types import AuditResult
 
+# Categorías ponderables (D6.2). Cada regla del score pertenece a una.
+SCORE_CATEGORIES = (
+    "reputation",
+    "reviews",
+    "website_presence",
+    "website_quality",
+    "opportunities",
+    "phone",
+    "email",
+)
+
+DEFAULT_THRESHOLDS = (80, 60, 40)  # hot, warm, cold
+
 RULE_WEIGHTS = {"no_cta": 5, "no_contact": 4, "no_mobile": 5, "no_seo": 3}
 
 
-def temperature_for(score: int) -> str:
-    if score >= 80:
+def resolve_weights(raw: dict[str, Any] | None) -> dict[str, float]:
+    """Devuelve un dict completo categoría→peso (default 1.0).
+
+    Ignora claves desconocidas y clampa a 0..3 (el endpoint valida igualmente;
+    esto es defensa en profundidad para llamadas directas/pipeline).
+    """
+    weights = {c: 1.0 for c in SCORE_CATEGORIES}
+    if not raw:
+        return weights
+    for cat in SCORE_CATEGORIES:
+        if raw.get(cat) is None:
+            continue
+        try:
+            value = float(raw[cat])
+        except (TypeError, ValueError):
+            continue
+        weights[cat] = min(3.0, max(0.0, value))
+    return weights
+
+
+def temperature_for(score: int, thresholds: tuple[int, int, int] | None = None) -> str:
+    hot, warm, cold = thresholds or DEFAULT_THRESHOLDS
+    if score >= hot:
         return LeadTemperature.HOT.value
-    if score >= 60:
+    if score >= warm:
         return LeadTemperature.WARM.value
-    if score >= 40:
+    if score >= cold:
         return LeadTemperature.COLD.value
     return LeadTemperature.LOW.value
 
@@ -55,7 +95,27 @@ class LeadScorer:
         has_website: bool,
         business_name: str,
         social_count: int = 0,
+        weights: dict[str, float] | None = None,
+        thresholds: tuple[int, int, int] | None = None,
     ) -> dict[str, Any]:
+        w = resolve_weights(weights)
+
+        def sc(base: float, cat: str) -> int:
+            """Puntos finales tras aplicar el peso de la categoría (redondeado)."""
+            return int(round(base * w[cat], 0))
+
+        def add(side: list[dict[str, Any]], *, base: float, cat: str, label: str, detail: str) -> int:
+            delta = sc(base, cat)
+            side.append({
+                "delta": delta,
+                "base_delta": base,
+                "weight": w[cat],
+                "category": cat,
+                "label": label,
+                "detail": detail,
+            })
+            return delta
+
         rating = rating or 0.0
         lead_reasons: list[dict[str, Any]] = []
         opp_reasons: list[dict[str, Any]] = []
@@ -64,90 +124,65 @@ class LeadScorer:
 
         # --- reputation (0-24) ------------------------------------------------
         if rating >= 4.8:
-            lead_score += 24
-            lead_reasons.append({"delta": 24, "label": "Excelente reputación", "detail": f"Rating {rating} estrellas"})
+            lead_score += add(lead_reasons, base=24, cat="reputation", label="Excelente reputación", detail=f"Rating {rating} estrellas")
         elif rating >= 4.5:
-            lead_score += 20
-            lead_reasons.append({"delta": 20, "label": "Muy buena reputación", "detail": f"Rating {rating} estrellas"})
+            lead_score += add(lead_reasons, base=20, cat="reputation", label="Muy buena reputación", detail=f"Rating {rating} estrellas")
         elif rating >= 4.2:
-            lead_score += 16
-            lead_reasons.append({"delta": 16, "label": "Buena reputación", "detail": f"Rating {rating} estrellas"})
+            lead_score += add(lead_reasons, base=16, cat="reputation", label="Buena reputación", detail=f"Rating {rating} estrellas")
         elif rating >= 4.0:
-            lead_score += 13
-            lead_reasons.append({"delta": 13, "label": "Reputación aceptable", "detail": f"Rating {rating} estrellas"})
+            lead_score += add(lead_reasons, base=13, cat="reputation", label="Reputación aceptable", detail=f"Rating {rating} estrellas")
         else:
-            lead_score += 7
-            lead_reasons.append({"delta": 7, "label": "Reputación media", "detail": f"Rating {rating} estrellas"})
+            lead_score += add(lead_reasons, base=7, cat="reputation", label="Reputación media", detail=f"Rating {rating} estrellas")
 
         # --- social proof / reviews (0-20) ------------------------------------
         if reviews >= 500:
-            lead_score += 20
-            lead_reasons.append({"delta": 20, "label": "Muy consolidado", "detail": f"{reviews} reseñas"})
+            lead_score += add(lead_reasons, base=20, cat="reviews", label="Muy consolidado", detail=f"{reviews} reseñas")
         elif reviews >= 300:
-            lead_score += 18
-            lead_reasons.append({"delta": 18, "label": "Más de 300 reseñas", "detail": f"{reviews} reseñas"})
+            lead_score += add(lead_reasons, base=18, cat="reviews", label="Más de 300 reseñas", detail=f"{reviews} reseñas")
         elif reviews >= 150:
-            lead_score += 14
-            lead_reasons.append({"delta": 14, "label": "Volumen de reseñas relevante", "detail": f"{reviews} reseñas"})
+            lead_score += add(lead_reasons, base=14, cat="reviews", label="Volumen de reseñas relevante", detail=f"{reviews} reseñas")
         elif reviews >= 100:
-            lead_score += 12
-            lead_reasons.append({"delta": 12, "label": "Cien o más reseñas", "detail": f"{reviews} reseñas"})
+            lead_score += add(lead_reasons, base=12, cat="reviews", label="Cien o más reseñas", detail=f"{reviews} reseñas")
         elif reviews >= 50:
-            lead_score += 9
-            lead_reasons.append({"delta": 9, "label": "Con reseñas", "detail": f"{reviews} reseñas"})
+            lead_score += add(lead_reasons, base=9, cat="reviews", label="Con reseñas", detail=f"{reviews} reseñas")
         else:
-            lead_score += 3
-            lead_reasons.append({"delta": 3, "label": "Pocas reseñas", "detail": f"{reviews} reseñas"})
+            lead_score += add(lead_reasons, base=3, cat="reviews", label="Pocas reseñas", detail=f"{reviews} reseñas")
 
         # --- website (0-26) ----------------------------------------------------
         if has_website and website_score is not None:
-            lead_score += 18
-            lead_reasons.append({"delta": 18, "label": "Website activo y auditado", "detail": f"Website {website_score:.1f}/10"})
+            lead_score += add(lead_reasons, base=18, cat="website_presence", label="Website activo y auditado", detail=f"Website {website_score:.1f}/10")
             quality = max(2, min(8, round(website_score / 10 * 8)))
-            lead_score += quality
-            lead_reasons.append({"delta": quality, "label": "Calidad del website", "detail": f"Score {website_score:.1f}/10"})
+            lead_score += add(lead_reasons, base=quality, cat="website_quality", label="Calidad del website", detail=f"Score {website_score:.1f}/10")
             digital_maturity = 6 + round((10 - website_score) * 2)
-            opportunity_score += digital_maturity
-            opp_reasons.append({"delta": digital_maturity, "label": "Oportunidad de mejora web", "detail": f"Presencia web con score {website_score:.1f}/10"})
+            opportunity_score += add(opp_reasons, base=digital_maturity, cat="website_quality", label="Oportunidad de mejora web", detail=f"Presencia web con score {website_score:.1f}/10")
         elif has_website:
-            lead_score += 12
-            lead_reasons.append({"delta": 12, "label": "Website activo", "detail": "Presencia web detectada"})
-            opportunity_score += 8
-            opp_reasons.append({"delta": 8, "label": "Presencia web detectable", "detail": "El negocio tiene website (aún no auditado)"})
+            lead_score += add(lead_reasons, base=12, cat="website_presence", label="Website activo", detail="Presencia web detectada")
+            opportunity_score += add(opp_reasons, base=8, cat="website_presence", label="Presencia web detectable", detail="El negocio tiene website (aún no auditado)")
         else:
-            lead_score += 16
-            lead_reasons.append({"delta": 16, "label": "Potencial para una web nueva", "detail": "Sin sitio registrado en Google Places"})
-            opportunity_score += 30
-            opp_reasons.append({"delta": 30, "label": "Web nueva", "detail": "No hay sitio registrado; validar si ya tienen uno"})
+            lead_score += add(lead_reasons, base=16, cat="website_presence", label="Potencial para una web nueva", detail="Sin sitio registrado en Google Places")
+            opportunity_score += add(opp_reasons, base=30, cat="website_presence", label="Web nueva", detail="No hay sitio registrado; validar si ya tienen uno")
 
-        # --- detected opportunities -----------------------------------------
+        # --- detected opportunities -------------------------------------------
         if audit and audit.opportunities:
             opp_weight = self._opportunity_weight(audit)
-            lead_score += 10
-            lead_reasons.append({"delta": 10, "label": "Oportunidades de diseño web", "detail": f"{len(audit.opportunities)} oportunidad(es) detectadas"})
-            opportunity_score += opp_weight
-            opp_reasons.append({"delta": opp_weight, "label": "Mejoras web detectadas", "detail": "; ".join(o["title"] for o in audit.opportunities[:3])})
+            lead_score += add(lead_reasons, base=10, cat="opportunities", label="Oportunidades de diseño web", detail=f"{len(audit.opportunities)} oportunidad(es) detectadas")
+            opportunity_score += add(opp_reasons, base=opp_weight, cat="opportunities", label="Mejoras web detectadas", detail="; ".join(o["title"] for o in audit.opportunities[:3]))
 
         # --- contactability ----------------------------------------------------
         if has_phone:
-            lead_score += 5
-            lead_reasons.append({"delta": 5, "label": "Teléfono disponible", "detail": "Contacto telefónico público"})
-            opportunity_score += 4
-            opp_reasons.append({"delta": 4, "label": "Contacto telefónico", "detail": "Facilita el primer contacto"})
+            lead_score += add(lead_reasons, base=5, cat="phone", label="Teléfono disponible", detail="Contacto telefónico público")
+            opportunity_score += add(opp_reasons, base=4, cat="phone", label="Contacto telefónico", detail="Facilita el primer contacto")
         if has_email:
             conf_points = {"HIGH": 9, "MEDIUM": 7, "LOW": 3}.get(email_confidence or "LOW", 3)
-            lead_score += conf_points
-            lead_reasons.append({"delta": conf_points, "label": "Email público encontrado", "detail": f"Confianza {email_confidence}"})
-            opportunity_score += conf_points
-            opp_reasons.append({"delta": conf_points, "label": "Email disponible", "detail": f"Confianza {email_confidence}"})
+            lead_score += add(lead_reasons, base=conf_points, cat="email", label="Email público encontrado", detail=f"Confianza {email_confidence}")
+            opportunity_score += add(opp_reasons, base=conf_points, cat="email", label="Email disponible", detail=f"Confianza {email_confidence}")
 
         # Web conversion and mobile experience, not invisible automation.
         if audit:
             for dimension in ("conversion", "mobile"):
                 if audit.subscores.get(dimension, 10) < 6:
-                    opportunity_score += 6
-                    opp_reasons.append({"delta": 6, "label": f"Mejora web: {dimension}",
-                                        "detail": f"Subscore {dimension}: {audit.subscores[dimension]}/10"})
+                    opportunity_score += add(opp_reasons, base=6, cat="opportunities", label=f"Mejora web: {dimension}",
+                                             detail=f"Subscore {dimension}: {audit.subscores[dimension]}/10")
 
         lead_score = min(100, lead_score)
         opportunity_score = min(100, opportunity_score)
@@ -155,7 +190,7 @@ class LeadScorer:
         from app.services.catalog import recommended_web_service
 
         recommended_service = recommended_web_service(has_website, website_score)
-        temperature = temperature_for(lead_score)
+        temperature = temperature_for(lead_score, thresholds)
         priority = priority_for(lead_score, opportunity_score)
         recommended_action = self._recommended_action(
             temperature=temperature,
@@ -176,6 +211,7 @@ class LeadScorer:
             "recommended_action": recommended_action,
             "recommended_service": recommended_service,
             "confidence": confidence,
+            "thresholds": thresholds or DEFAULT_THRESHOLDS,
             "why_this_lead": self._why_this_lead(
                 business_name=business_name,
                 rating=rating,

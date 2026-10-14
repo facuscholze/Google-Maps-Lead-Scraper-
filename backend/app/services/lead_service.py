@@ -9,8 +9,17 @@ from app.models.website import WebsiteAudit
 from app.services.analysis.scorer import LeadScorer
 
 
-def score_lead(db: Session, lead: Lead) -> dict:
-    """Compute explainable scores and persist them onto the lead."""
+def score_lead(db: Session, lead: Lead, config=None) -> dict:
+    """Compute explainable scores and persist them onto the lead.
+
+    F6: aplica los pesos/umbrales del workspace cuando se pasa `config`
+    (ResolvedScoringConfig); sin config, los carga del workspace o usa
+    defaults (filas opt-in, D6.1).
+    """
+    if config is None:
+        from app.services.scoring_config_service import load_scoring_config
+
+        config = load_scoring_config(db, lead.workspace_id)
     scorer = LeadScorer()
     audit = db.scalar(
         select(WebsiteAudit)
@@ -60,6 +69,8 @@ def score_lead(db: Session, lead: Lead) -> dict:
         social_count=len((lead.contact_channels or {}).get("social", []))
         if lead.contact_channels
         else 0,
+        weights=config.weights,
+        thresholds=config.thresholds,
     )
 
     lead.lead_score = result["lead_score"]

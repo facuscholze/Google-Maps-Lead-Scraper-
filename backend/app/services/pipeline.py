@@ -462,6 +462,9 @@ class SearchPipeline:
             payload={"leads": len(lead_ids)},
         )
         self.db.commit()
+        from app.services.scoring_config_service import load_scoring_config
+
+        scoring_cfg = load_scoring_config(self.db, search.workspace_id)
         leads = list(
             self.db.scalars(
                 select(Lead).where(
@@ -471,7 +474,7 @@ class SearchPipeline:
             ).all()
         )
         for idx, lead in enumerate(leads):
-            score_lead(self.db, lead)
+            score_lead(self.db, lead, config=scoring_cfg)
             if (idx + 1) % 5 == 0 or idx == len(leads) - 1:
                 self.jobs.progress(
                     job, f"Puntuando leads… {idx + 1} / {len(leads)}", idx + 1, len(leads)

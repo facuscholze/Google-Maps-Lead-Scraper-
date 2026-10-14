@@ -99,3 +99,24 @@ class LeadView(Base, PKMixin, TimestampMixin):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class ScoringConfig(Base, PKMixin, TimestampMixin):
+    """Workspace scoring profile (Fase 6, D6.1).
+
+    Pesos multiplicativos por categoría (0..3, default 1.0) y umbrales de
+    temperatura (hot > warm > cold, defaults 80/60/40). Es una fila opcional:
+    sin fila, se aplican los defaults. Jamás afecta a datos observados — solo
+    a la agregación del score y su clasificación.
+    """
+
+    __tablename__ = "scoring_configs"
+    __table_args__ = (UniqueConstraint("workspace_id", name="uq_scoring_config_ws"),)
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    weights_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    hot_min: Mapped[int] = mapped_column(Integer, default=80, nullable=False)
+    warm_min: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    cold_min: Mapped[int] = mapped_column(Integer, default=40, nullable=False)

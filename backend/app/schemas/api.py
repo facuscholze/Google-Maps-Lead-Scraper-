@@ -250,6 +250,43 @@ class LeadActivityOut(BaseModel):
     items: list[LeadActivityItem]
 
 
+# ------------------------------------------------------------- scoring (F6) --
+class ScoringWeightsIn(BaseModel):
+    reputation: float | None = Field(default=None, ge=0, le=3)
+    reviews: float | None = Field(default=None, ge=0, le=3)
+    website_presence: float | None = Field(default=None, ge=0, le=3)
+    website_quality: float | None = Field(default=None, ge=0, le=3)
+    opportunities: float | None = Field(default=None, ge=0, le=3)
+    phone: float | None = Field(default=None, ge=0, le=3)
+    email: float | None = Field(default=None, ge=0, le=3)
+
+
+class ScoringConfigIn(BaseModel):
+    weights: ScoringWeightsIn | None = None
+    hot_min: int | None = Field(default=None, ge=1, le=99)
+    warm_min: int | None = Field(default=None, ge=1, le=99)
+    cold_min: int | None = Field(default=None, ge=1, le=99)
+
+
+class ScoringConfigOut(BaseModel):
+    id: int | None = None  # None = defaults (sin fila persistida)
+    weights: dict[str, float]
+    hot_min: int = 80
+    warm_min: int = 60
+    cold_min: int = 40
+    is_default: bool = False
+    updated_at: datetime | None = None
+
+
+class LeadsRescoreRequest(BaseModel):
+    ids: list[int] | None = Field(default=None, max_length=500)
+
+
+class LeadsRescoreResponse(BaseModel):
+    rescored: int
+    skipped: list[int] = Field(default_factory=list)
+
+
 class LeadDetail(LeadSummary):
     primary_type: str | None = None
     address: str | None = None

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Ban, Check, Mail, Plus, Trash2, Link2, RefreshCw } from "lucide-react";
@@ -189,6 +190,22 @@ export default function SettingsPage() {
             ))}
           </Card>
         )}
+      </section>
+      <section>
+        <Link href="/settings/scoring">
+          <Card className="cursor-pointer transition hover:border-gold/50">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-lg font-semibold">Scoring de leads</h2>
+                <p className="text-sm text-taupe mt-1">
+                  Ajustá cuánto pesa cada señal (reputación, reseñas, website, email…) y los umbrales de temperatura.
+                  Todo el cálculo es explicable en el detalle de cada lead.
+                </p>
+              </div>
+              <span className="chip bg-gold/10 text-gold font-semibold shrink-0">Configurar →</span>
+            </div>
+          </Card>
+        </Link>
       </section>
     </div>
   );

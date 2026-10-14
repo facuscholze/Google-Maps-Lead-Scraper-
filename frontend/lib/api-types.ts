@@ -327,6 +327,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/leads/{lead_id}/audit/screenshots/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lead Audit Screenshot
+         * @description Descarga autenticada de una captura de evidencia (F5, D5.4).
+         *
+         *     El path físico nunca sale en la API: solo metadatos + este endpoint.
+         */
+        get: operations["lead_audit_screenshot_api_leads__lead_id__audit_screenshots__index__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/leads/bulk": {
         parameters: {
             query?: never;
@@ -421,6 +443,68 @@ export interface paths {
         post?: never;
         /** Delete View */
         delete: operations["delete_view_api_lead_views__view_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scoring-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scoring Config */
+        get: operations["get_scoring_config_api_scoring_config_get"];
+        /** Put Scoring Config */
+        put: operations["put_scoring_config_api_scoring_config_put"];
+        post?: never;
+        /** Delete Scoring Config */
+        delete: operations["delete_scoring_config_api_scoring_config_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scoring-config/rescore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rescore Leads
+         * @description Recalcula lead/opportunity/temperature con la config vigente.
+         *
+         *     Determinista y local: recomputa sobre datos persistidos, sin llamadas a
+         *     Places. Excluye leads archivados — su puntuación es irrelevante igual.
+         */
+        post: operations["rescore_leads_api_scoring_config_rescore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scoring-config/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Categories
+         * @description Metadatos para la UI (descripciones es-AR).
+         */
+        get: operations["list_categories_api_scoring_config_categories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1239,6 +1323,18 @@ export interface components {
             /** Skipped */
             skipped?: number[];
         };
+        /** LeadsRescoreRequest */
+        LeadsRescoreRequest: {
+            /** Ids */
+            ids?: number[] | null;
+        };
+        /** LeadsRescoreResponse */
+        LeadsRescoreResponse: {
+            /** Rescored */
+            rescored: number;
+            /** Skipped */
+            skipped?: number[];
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Email */
@@ -1336,6 +1432,64 @@ export interface components {
             body_html?: string | null;
             /** Body Plain */
             body_plain?: string | null;
+        };
+        /** ScoringConfigIn */
+        ScoringConfigIn: {
+            weights?: components["schemas"]["ScoringWeightsIn"] | null;
+            /** Hot Min */
+            hot_min?: number | null;
+            /** Warm Min */
+            warm_min?: number | null;
+            /** Cold Min */
+            cold_min?: number | null;
+        };
+        /** ScoringConfigOut */
+        ScoringConfigOut: {
+            /** Id */
+            id?: number | null;
+            /** Weights */
+            weights: {
+                [key: string]: number;
+            };
+            /**
+             * Hot Min
+             * @default 80
+             */
+            hot_min: number;
+            /**
+             * Warm Min
+             * @default 60
+             */
+            warm_min: number;
+            /**
+             * Cold Min
+             * @default 40
+             */
+            cold_min: number;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** ScoringWeightsIn */
+        ScoringWeightsIn: {
+            /** Reputation */
+            reputation?: number | null;
+            /** Reviews */
+            reviews?: number | null;
+            /** Website Presence */
+            website_presence?: number | null;
+            /** Website Quality */
+            website_quality?: number | null;
+            /** Opportunities */
+            opportunities?: number | null;
+            /** Phone */
+            phone?: number | null;
+            /** Email */
+            email?: number | null;
         };
         /** SearchCreate */
         SearchCreate: {
@@ -2248,6 +2402,38 @@ export interface operations {
             };
         };
     };
+    lead_audit_screenshot_api_leads__lead_id__audit_screenshots__index__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lead_id: number;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     leads_bulk_action_api_leads_bulk_post: {
         parameters: {
             query?: never;
@@ -2458,6 +2644,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scoring_config_api_scoring_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoringConfigOut"];
+                };
+            };
+        };
+    };
+    put_scoring_config_api_scoring_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScoringConfigIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScoringConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scoring_config_api_scoring_config_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    rescore_leads_api_scoring_config_rescore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadsRescoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadsRescoreResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_categories_api_scoring_config_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

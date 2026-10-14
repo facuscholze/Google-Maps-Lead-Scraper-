@@ -53,6 +53,9 @@ services:
       # The Next.js proxy forwards edge X-Forwarded-For; docker's default pool
       # is 172.16.0.0/12, so rate limiting keys on the real client, not the proxy.
       TRUSTED_PROXIES: "127.0.0.1,::1,172.16.0.0/12,192.168.0.0/16,10.0.0.0/8"
+      # Fase 5: el backend image trae Chromium (playwright install) → evidencia
+      # visual activa por defecto en Docker. Fuera de docker queda en "none".
+      SCREENSHOT_PROVIDER: playwright
     ports:
       - "8000:8000"
     depends_on:

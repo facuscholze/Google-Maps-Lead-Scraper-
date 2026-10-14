@@ -6,6 +6,7 @@ fresh (within TTL), it is reused instead of re-crawling (spec §54).
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from datetime import timedelta
 from typing import Any
 
@@ -25,6 +26,7 @@ from app.models.website import WebsiteAudit, WebsitePage
 from app.schemas.ai import AIWebsiteAudit
 from app.services.analysis.auditor import WebsiteAuditor
 from app.services.analysis.types import AuditResult, ExtractedWebsite, PageData
+from app.services.screenshot_service import ScreenshotService
 from app.utils.text import as_utc, utcnow
 
 logger = logging.getLogger("avascho.website")
@@ -119,6 +121,7 @@ class WebsiteAnalysisService:
             strengths=result.strengths,
             weaknesses=result.weaknesses,
             opportunities=result.opportunities,
+            findings=[asdict(f) for f in result.findings],
             extracted_data={
                 "emails": result.extracted.emails,
                 "phones": result.extracted.phones,
@@ -215,4 +218,20 @@ class WebsiteAnalysisService:
         result, content_hash = self.analyze_pages(pages)
         result = self.enrich_with_ai(result)
         audit = self.persist_audit(lead, result, pages)
+        self._capture_screenshot(lead, audit)
         return {"audited": True, "reused": False, "pages": len(pages), "audit_id": audit.id}
+
+    def _capture_screenshot(self, lead: Lead, audit: WebsiteAudit) -> None:
+        """F5: adjunta evidencia visual si el provider está activo.
+
+        Falla suave por diseño (D5.2): provider "none" o cualquier error de
+        captura deja el audit sin screenshot, sin interrumpir el pipeline.
+        """
+        url = lead.website or audit.url
+        if not url:
+            return
+        meta = ScreenshotService().capture_home(url, lead.workspace_id, lead.id, audit.id)
+        if meta is not None:
+            audit.screenshots = [meta]
+            self.db.add(audit)
+            self.db.flush()

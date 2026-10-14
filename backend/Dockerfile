@@ -10,7 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt \
+ && playwright install --with-deps chromium \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 

@@ -50,6 +50,18 @@ class Settings(BaseSettings):
     grid_subdivide: bool = True      # subdivide cells that hit the 60-result cap
     grid_max_subdivision_depth: int = 2
 
+    # --- Screenshots de evidencia (Fase 5) --------------------------------------
+    # "none" desactiva la captura sin romper la auditoría (D5.2); "playwright"
+    # requiere el browser instalado (Docker lo trae). Nunca se inventa imagen:
+    # si la captura falla, el audit queda sin screenshot y así se muestra.
+    screenshot_provider: str = "none"  # none | playwright
+    screenshots_dir: str = "./screenshots"
+    screenshot_timeout_ms: int = 12000
+    screenshot_viewport_width: int = 1280
+    screenshot_viewport_height: int = 800
+    screenshot_jpeg_quality: int = 80
+    screenshot_max_bytes: int = 600_000
+
     # --- Crawler ---------------------------------------------------------------
     max_pages_per_domain: int = 10
     max_page_size_bytes: int = 2_000_000

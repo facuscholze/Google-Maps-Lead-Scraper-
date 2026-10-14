@@ -44,3 +44,6 @@ exports/
 *.db
 *.sqlite
 *.sqlite3
+
+# Screenshots de evidencia (Fase 5) — artefacto local, no versionado
+backend/screenshots/

@@ -56,6 +56,26 @@ export interface Opportunity {
   confidence?: number;
 }
 
+export interface AuditFinding {
+  problem: string;
+  evidence: string;
+  source_url?: string | null;
+  kind: "FACT" | "INFERENCE" | string;
+  dimension?: string;
+  score_impact?: number;
+}
+
+export interface AuditScreenshotMeta {
+  index: number;
+  url?: string | null;
+  kind?: string | null;
+  width?: number | null;
+  height?: number | null;
+  bytes?: number | null;
+  http_status?: number | null;
+  captured_at?: string | null;
+}
+
 export interface AuditPayload {
   id?: number;
   url?: string;
@@ -64,6 +84,8 @@ export interface AuditPayload {
   strengths?: Array<{ text?: string; evidence?: string; kind?: string }>;
   weaknesses?: Array<{ text?: string; evidence?: string; kind?: string }>;
   opportunities?: Opportunity[];
+  findings?: AuditFinding[];
+  screenshots?: AuditScreenshotMeta[];
   extracted?: Record<string, unknown>;
   title?: string | null;
   services?: string[];

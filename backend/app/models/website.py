@@ -27,6 +27,11 @@ class WebsiteAudit(Base, PKMixin, TimestampMixin):
     strengths: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     weaknesses: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     opportunities: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Fase 5 — evidencia cruda: findings completos con kind FACT/INFERENCE,
+    # fuente y dimensión; screenshots capturados del sitio (metadatos + path
+    # relativo dentro de settings.screenshots_dir — nunca inventados, D5.1).
+    findings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    screenshots: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     extracted_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     meta_description: Mapped[str | None] = mapped_column(Text, nullable=True)

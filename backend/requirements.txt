@@ -38,3 +38,8 @@ google-auth==2.57.1
 # --- Dev / test ----------------------------------------------------------------
 pytest==8.3.4
 pytest-cov==6.0.0
+
+# --- Screenshot evidence (Fase 5, D5.3) ----------------------------------------
+# Chromium se instala aparte (ver Dockerfile: `playwright install chromium`);
+# sin browser, el provider queda en "none" y la auditoría funciona igual.
+playwright==1.49.0

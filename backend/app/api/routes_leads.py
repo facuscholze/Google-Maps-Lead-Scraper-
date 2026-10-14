@@ -469,6 +469,20 @@ def get_lead_audit(
             "strengths": audit.strengths,
             "weaknesses": audit.weaknesses,
             "opportunities": audit.opportunities,
+            "findings": audit.findings,
+            "screenshots": [
+                {
+                    "index": i,
+                    "url": s.get("url"),
+                    "kind": s.get("kind"),
+                    "width": s.get("width"),
+                    "height": s.get("height"),
+                    "bytes": s.get("bytes"),
+                    "http_status": s.get("http_status"),
+                    "captured_at": s.get("captured_at"),
+                }
+                for i, s in enumerate(audit.screenshots or [])
+            ],
             "extracted": audit.extracted_data,
             "title": audit.title,
             "services": audit.services,
@@ -481,6 +495,34 @@ def get_lead_audit(
             for p in pages
         ],
     }
+
+
+@router.get("/{lead_id}/audit/screenshots/{index}")
+def lead_audit_screenshot(
+    lead_id: int,
+    index: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Descarga autenticada de una captura de evidencia (F5, D5.4).
+
+    El path físico nunca sale en la API: solo metadatos + este endpoint."""
+    from fastapi.responses import FileResponse
+
+    from app.services.screenshot_service import resolve_screenshot_path
+
+    lead = LeadRepository(db).get_for_workspace(user.workspace_id, lead_id)
+    if lead is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Lead no encontrado")
+    audit = AuditRepository(db).latest_for_lead(lead.id)
+    shots = (audit.screenshots or []) if audit is not None else []
+    if index < 0 or index >= len(shots):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Captura no encontrada")
+    path = resolve_screenshot_path(shots[index].get("path") or "")
+    if path is None or not path.exists():
+        # El archivo se borró fuera de banda: no inventamos nada, avisamos 404.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Archivo de captura no disponible")
+    return FileResponse(path, media_type="image/jpeg", filename=path.name)
 
 
 # ------------------------------------------------------------- bulk actions --

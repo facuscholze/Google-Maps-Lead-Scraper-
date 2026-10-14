@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -42,6 +42,23 @@ import {
   TemperatureChip,
   cn,
 } from "@/components/ui";
+
+// Fase 5: tipos locales para evidencia de auditoría
+interface AuditFinding {
+  problem: string;
+  evidence: string;
+  source_url?: string | null;
+  kind: string;
+  dimension?: string;
+}
+interface AuditShot {
+  index: number;
+  url?: string | null;
+  kind?: string | null;
+  width?: number | null;
+  height?: number | null;
+  captured_at?: string | null;
+}
 
 const DIM_LABELS: Record<string, string> = {
   design: "Diseño",
@@ -364,6 +381,25 @@ export default function LeadDetailPage() {
               </div>
             </Card>
           </div>
+
+          {/* F5 · Captura de evidencia */}
+          {((audit as { screenshots?: AuditShot[] }).screenshots ?? []).length > 0 && (
+            <Card>
+              <h2 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
+                <Globe size={18} className="text-gold" /> Captura del sitio
+              </h2>
+              <div className="grid gap-4 md:grid-cols-2">
+                {((audit as { screenshots?: AuditShot[] }).screenshots ?? []).map((shot) => (
+                  <AuditScreenshot key={shot.index} leadId={id} shot={shot} />
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* F5 · Findings clasificados */}
+          {((audit as { findings?: AuditFinding[] }).findings ?? []).length > 0 && (
+            <FindingsCard findings={(audit as { findings?: AuditFinding[] }).findings ?? []} />
+          )}
         </>
       )}
 
@@ -450,6 +486,91 @@ export default function LeadDetailPage() {
 // Fase 4: tipos locales para timeline/propuestas
 interface ActivityItem { ts: string | null; kind: string; label: string; detail?: string | null }
 interface ProposalSummary { id: number; subject: string; status: string; created_at: string }
+
+function AuditScreenshot({ leadId, shot }: { leadId: string; shot: AuditShot }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    api
+      .getBlob(`/api/leads/${leadId}/audit/screenshots/${shot.index}`)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => !cancelled && setFailed(true));
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [leadId, shot.index]);
+
+  return (
+    <figure className="rounded-xl border border-sandline overflow-hidden bg-sand/40">
+      {failed ? (
+        <div className="grid h-48 place-items-center p-4 text-center text-xs text-taupe">
+          La captura no está disponible en este entorno (sin navegador headless).
+        </div>
+      ) : src ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={src}
+          alt={`Captura del sitio ${shot.url ?? ""}`}
+          width={shot.width ?? 1280}
+          height={shot.height ?? 800}
+          className="h-auto w-full"
+        />
+      ) : (
+        <div className="grid h-48 place-items-center text-xs text-taupe">Cargando captura…</div>
+      )}
+      <figcaption className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-[11px] text-taupe">
+        <span className="truncate">{shot.url}</span>
+        {shot.captured_at && <span>{new Date(shot.captured_at).toLocaleString("es-UY")}</span>}
+      </figcaption>
+    </figure>
+  );
+}
+
+function FindingsCard({ findings }: { findings: AuditFinding[] }) {
+  return (
+    <Card>
+      <h2 className="font-display text-lg font-semibold mb-1 flex items-center gap-2">
+        <Sparkles size={18} className="text-gold" /> Findings de la auditoría
+      </h2>
+      <p className="text-xs text-taupe mb-4">
+        Cada ítem se observó en las páginas analizadas (<b className="text-[#1E8E3E]">FACT</b>) o se
+        dedujo por ausencia (<b className="text-[#B08D3E]">INFERENCE</b>). Nada se asume sin evidencia.
+      </p>
+      <div className="space-y-2.5">
+        {findings.map((f, i) => (
+          <div key={i} className="flex flex-wrap items-start gap-2 rounded-xl border border-sandline px-3 py-2.5">
+            <span
+              className={cn(
+                "chip shrink-0 text-[10px]",
+                f.kind === "FACT" ? "bg-[#1E8E3E]/10 text-[#1E8E3E]" : "bg-gold/10 text-gold",
+              )}
+              title={f.kind === "FACT" ? "Observado directamente en el sitio" : "Deducido por ausencia de señales"}
+            >
+              {f.kind}
+            </span>
+            {f.dimension && <span className="chip bg-sand text-[10px] text-taupe shrink-0">{DIM_LABELS[f.dimension] ?? f.dimension}</span>}
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">{f.problem}</div>
+              <div className="text-xs text-taupe mt-0.5">{f.evidence}</div>
+              {f.source_url && (
+                <a href={f.source_url} target="_blank" rel="noreferrer" className="mt-0.5 block truncate text-[11px] text-gold underline underline-offset-2">
+                  {f.source_url} <ExternalLink size={10} className="inline" />
+                </a>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
 
 function ProfileRow({ icon, label, value, link }: { icon: React.ReactNode; label: string; value: string; link?: string }) {
   return (

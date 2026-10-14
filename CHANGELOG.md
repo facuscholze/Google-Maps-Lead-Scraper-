@@ -4,6 +4,36 @@ Todas las novedades relevantes del rediseño, por fase. Formato: [Keep a Changel
 
 ## [Unreleased]
 
+### Fase 5 — Website audit con evidencia + screenshots (2026-10-14)
+- **Findings persistidos**: `website_audits.findings` (migración `b5c9e2d41f07`)
+  guarda la evidencia completa — problema, evidencia textual, `source_url`,
+  `kind` FACT/INFERENCE, dimensión. Audits previos quedan con lista vacía
+  (nada backfilleado inventado, D5.1) y la API los expone igual.
+- **Screenshots reales con degradación honesta (D5.2–D5.5)**: nuevo
+  `ScreenshotService` provider-driven (`none`|`playwright`), captura del
+  *home fold* 1280×800 jpeg para cada audit nuevo; si la captura no es
+  posible, el audit queda sin imagen — jamás sintética. Config vía env
+  (`SCREENSHOT_*`), PATH de archivos bajo `settings.screenshots_dir`.
+- **Descarga autenticada**: `GET /api/leads/{id}/audit/screenshots/{index}`
+  (FileResponse + scoping de workspace; el path físico nunca sale en la API;
+  anti path traversal en `resolve_screenshot_path`, D5.4).
+- **Docker**: imagen backend instala Chromium (`playwright install --with-deps
+  chromium`), `playwright==1.49.0` pineada, compose activa el provider por
+  defecto (D5.3). `.env.example` documenta todas las settings; `.gitignore`
+  excluye `backend/screenshots/`.
+- **Fix transversal (D5.6)**: re-ejecutar una búsqueda ya no viola el índice
+  único de `search_leads` — el stage de ingest precarga los vínculos
+  existentes. Detectado en el E2E (re-run tras FAILED intermedio).
+- **Frontend `/leads/[id]`**: card "Captura del sitio" (blob autenticado,
+  caption URL+fecha, estado honesto cuando no hay navegador) y card
+  "Findings" con chips `FACT`/`INFERENCE` + dimensión + evidencia + fuente.
+- **E2E verificado en vivo** (mock): búsqueda grid re-ejecutada hasta
+  COMPLETED (96 leads, 93 webs, 13 emails); re-audit con cache invalidada
+  persiste 10 findings (2 FACT/8 INFERENCE) expuestos por la API.
+- Tests: `test_audit_evidence.py` (persistencia, provider none, soft-fail,
+  endpoint 404/200 con archivo fake, analyze_lead robusto) + suite completa
+  verde; tsc --noEmit + build limpios.
+
 ### Fase 4 — Leads Pro: selección, vistas a cuenta, evidencia y bulk (2026-10-14)
 - **Tabla de leads pro (`/leads`):** selección por fila con barra flotante de
   acciones masivas; visibilidad de columnas (dropdown) con persistencia en la

@@ -333,7 +333,15 @@ class SearchPipeline:
             if mapped.get("place_id"):
                 mapped_all.append(mapped)
         qualified: list[dict[str, Any]] = []
-        seen_link: set[tuple[int, int]] = set()
+        # incluye los vínculos de corridas anteriores interrumpidas (la búsqueda
+        # puede re-ejecutarse; el índice único de search_leads no debe romper).
+        seen_link: set[tuple[int, int]] = set(
+            self.db.execute(
+                select(SearchLead.search_id, SearchLead.lead_id).where(
+                    SearchLead.search_id == search.id
+                )
+            ).all()
+        )
         deduped = 0
 
         for idx, mapped in enumerate(mapped_all):

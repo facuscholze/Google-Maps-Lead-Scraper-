@@ -4,6 +4,35 @@ Todas las novedades relevantes del rediseño, por fase. Formato: [Keep a Changel
 
 ## [Unreleased]
 
+### Fase 8 — Plantilla de email verificada y blindada (2026-10-15)
+- **Auditoría diseño vs. original (D8.1)**: `templates/innblock.html` se
+  contrastó contra `nuevo html mail.html`: el sistema de diseño (portal
+  animado, paleta rojo/negro, fuentes, footer con borde rojo y textos fijos)
+  queda EXACTO; las únicas divergencias son las ya decididas de producto
+  (copy de venta web, slots de personalización, fortalezas con evidencia en
+  lugar de stats no verificables del estudio).
+- **Firma de socios fija (D8.2)**: bloque EXACTO del original (Facundo
+  Scholze + Yamall Avalos, "Co-fundador", teléfonos con wa.me, borde rojo,
+  columnas apilables en mobile) fijado en el renderer — la IA y la edición
+  humana sólo tocan la línea de despedida. El editor lo aclara ("Línea de
+  despedida") y el default "Equipo Innblock" desaparece.
+- **List-Unsubscribe técnico (D8.3)**: header RFC 2369
+  (`mailto:…?subject=BAJA`, One-Click) en el MIME real y el mock, cableado
+  desde la config de contacto de marca — sin config, no se inventa.
+- **Paridad HTML/plain (D8.4)**: misma línea de baja obligatoria en ambas
+  representaciones y bloque de socios también en texto plano.
+- **Original preservado (D8.5)**: copia byte-idéntica en
+  `templates/email/innblock_original.html`, verificada por test; el script
+  de sync se repurposa a preservar (BUG-01 resuelto — antes podía pisar el
+  template derivado leyendo un archivo inexistente).
+- **Dark-mode safe (D8.6)**: metas `color-scheme`/`supported-color-schemes`
+  light en el head del mail.
+- Tests: el xfail histórico de sync se reemplaza por 7 tests F8 (original
+  byte-idéntico, invariantes de diseño, firma exacta siempre presente,
+  despedida default, opt-out HTML+plain, header MIME, caracteres hostiles
+  end-to-end) — **suite completa 146/146, sin ningún xfail**; tsc + build
+  12/12; E2E vivo con 14/14 checks sobre la propuesta generada real.
+
 ### Fase 7 — Propuestas sólo con evidencia real (2026-10-14)
 - **Grounding mecánico en el service** (`ProposalService._ground_proposal`,
   D7.1/D7.2): las fortalezas viajan como `{text, evidence, kind}` (nunca

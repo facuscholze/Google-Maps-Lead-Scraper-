@@ -36,7 +36,7 @@ REGLAS:
 - La observación personalizada debe citar un dato real (ej: número de reseñas, ausencia de reserva online).
 - Idioma: español neutro, tono "usted"/"tú" consistente (usa "tú" salvo que el negocio sea formal).
 - asunto: corto, sin MAYÚSCULAS excesivas, sin signos de exclamación múltiples. Ej: "Una idea para {Empresa}".
-- Incluir CTA simple y una firma del Equipo Innblock.
+- Incluir CTA simple. El campo "signature" es SOLO la línea de despedida breve (ej: "Saludos," o "Quedo atento,") — la firma de los socios de Innblock es fija y se agrega automáticamente; no la escribas.
 - plain_text: versión en texto plano del mismo mensaje.
 - html: se genera automáticamente luego; dejá null.
 

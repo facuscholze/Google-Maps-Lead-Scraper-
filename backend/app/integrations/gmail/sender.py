@@ -20,6 +20,7 @@ def build_raw_message(
     body_html: str | None,
     body_plain: str | None,
     reply_to: str | None = None,
+    unsubscribe_email: str | None = None,
 ) -> str:
     message = MIMEMultipart("alternative")
     message["To"] = to_email
@@ -27,6 +28,11 @@ def build_raw_message(
     message["Subject"] = subject
     if reply_to:
         message["Reply-To"] = reply_to
+    # F8 (RFC 2369): opt-out técnico además del pie "BAJA" — mejora la
+    # entregabilidad y da a Gmail/buzones un botón nativo de baja.
+    if unsubscribe_email:
+        message["List-Unsubscribe"] = f"<mailto:{unsubscribe_email}?subject=BAJA>"
+        message["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     if body_plain:
         message.attach(MIMEText(body_plain, "plain", "utf-8"))
     if body_html:
@@ -62,13 +68,14 @@ class MockGmailSender:
         self.sent: list[dict] = []
 
     def send(self, to_email: str, from_email: str, subject: str, body_html: str | None,
-             body_plain: str | None) -> dict:
+             body_plain: str | None, unsubscribe_email: str | None = None) -> dict:
         record = {
             "to": to_email,
             "from": from_email,
             "subject": subject,
             "body_html": body_html,
             "body_plain": body_plain,
+            "unsubscribe_email": unsubscribe_email,
         }
         self.sent.append(record)
         return {"id": f"mock-{len(self.sent)}", "threadId": f"mock-thread-{len(self.sent)}"}

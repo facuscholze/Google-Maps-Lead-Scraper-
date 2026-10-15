@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Generador de mail — Estudio</title>
+
+<!-- ============================================================
+     ✏️  VARIABLES — CAMBIÁ SOLO ESTO
+     Guardá el archivo (Ctrl+S) y recargá el navegador (F5).
+     ============================================================ -->
+<script>
+const CONFIG = {
+  // --- Destinatario ---
+  nombre:          "Juan",                    // Nombre de la persona que recibe el mail
+  empresaCliente:  "Panadería La Espiga",     // Su empresa
+  asunto:          "Juan, ¿qué se hace a mano todos los días en La Espiga?",
+
+  // --- Firma: los socios (podés agregar o quitar) ---
+  socios: [
+    { nombre: "Facundo Scholze", rol: "Co-fundador", telefono: "+54 3755 629953" },
+    { nombre: "Yamall Avalos",   rol: "Co-fundador", telefono: "+598 95 657 007" },
+  ],
+  tuEmail:         "hola@tudominio.com",      // Mail de contacto que va en la firma
+
+  // --- Links ---
+  linkContacto:    "https://web-estudio-alpha.vercel.app/es/#contacto",
+  linkWeb:         "https://web-estudio-alpha.vercel.app/es/",
+
+  // --- Marca ---
+  empresa:         "Estudio",
+  ubicacion:       "Uruguay · Argentina",
+  hechoEn:         "🇺🇾 Uruguay &nbsp;·&nbsp; 🇦🇷 Argentina &nbsp;·&nbsp; 🇧🇷 Brasil",          // Banderas de donde trabajamos (van en el pie)
+  lema:            "Solucionamos problemas y mejoramos tu servicio web. Sin vender humo.",
+  anio:            "2026",
+  rojo:            "#d90000",                 // Rojo de la marca
+  negro:           "#070707",                 // Negro de la marca
+};
+</script>
+<!-- ============================================================
+     No hace falta tocar nada de acá para abajo
+     ============================================================ -->
+
+<style>
+  body { margin:0; font-family: Arial, sans-serif; background:#e9e9e9; }
+  .bar { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+         padding:12px 20px; background:#070707; color:#fff; font-size:13px; }
+  .bar strong { color:#ff3b30; }
+  .bar .asunto { flex:1; min-width:220px; color:#bbb; }
+  .bar button { background:#d90000; color:#fff; border:0; padding:10px 14px; font-weight:bold;
+                font-size:12px; cursor:pointer; letter-spacing:.5px; }
+  .bar button.alt { background:#333; }
+  .bar button:hover { filter:brightness(1.15); }
+  #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#070707; color:#fff;
+           padding:12px 18px; font-size:13px; border-left:4px solid #d90000; opacity:0; transition:opacity .3s; }
+  #toast.show { opacity:1; }
+  iframe { display:block; width:100%; border:0; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="asunto"><strong>Asunto:</strong> <span id="asuntoTxt" contenteditable="true" title="Hacé clic para editar el asunto" style="outline:none;border-bottom:1px dashed #555;"></span></span>
+  <button id="btnEditar" onclick="toggleEdicion()">✏️ Edición: ON</button>
+  <button onclick="restablecer()" class="alt">↺ Restablecer</button>
+  <button onclick="copiarAsunto()" class="alt">Copiar asunto</button>
+  <button onclick="copiarParaGmail()">Copiar para Gmail</button>
+  <button onclick="copiarHTML()" class="alt">Copiar HTML (Brevo / Mailchimp)</button>
+  <button onclick="descargar()" class="alt">Descargar .html</button>
+</div>
+
+<iframe id="vista" title="Vista previa del mail"></iframe>
+<div id="toast"></div>
+
+<!-- ===================== PLANTILLA DEL MAIL ===================== -->
+<script type="text/plain" id="plantilla">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{empresa}} — Software a medida y sitios web</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=Instrument+Serif:ital@0;1&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  @keyframes portalIn {
+    0%   { transform: scale(.4) rotate(-45deg); opacity: 0; }
+    70%  { transform: scale(1.06) rotate(3deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0); opacity: 1; }
+  }
+  @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.035); } }
+  @keyframes wave {
+    0%, 55%, 100% { border-color: #f3d0d0; box-shadow: 0 0 0 0 rgba(217,0,0,0); }
+    20%           { border-color: {{rojo}}; box-shadow: 0 0 14px 1px rgba(217,0,0,.45), inset 0 0 10px rgba(217,0,0,.25); }
+  }
+  @keyframes coreBeat {
+    0%, 60%, 100% { transform: rotate(0deg) scale(1);    box-shadow: 0 0 0 0 rgba(217,0,0,0); }
+    75%           { transform: rotate(45deg) scale(1.12); box-shadow: 0 0 30px 10px rgba(217,0,0,.55); }
+    90%           { transform: rotate(90deg) scale(1);   box-shadow: 0 0 10px 2px rgba(217,0,0,.25); }
+  }
+  .ring1 { animation: portalIn 1.1s cubic-bezier(.2,.8,.2,1) both, breathe 4.8s ease-in-out 1.1s infinite, wave 2.4s ease-in-out 1.1s infinite; }
+  .ring2 { animation: wave 2.4s ease-in-out 1.35s infinite; }
+  .ring3 { animation: wave 2.4s ease-in-out 1.6s infinite; }
+  .ring4 { animation: wave 2.4s ease-in-out 1.85s infinite; }
+  .core  { animation: coreBeat 2.4s cubic-bezier(.6,0,.2,1) 1.1s infinite; }
+  @media (prefers-reduced-motion: reduce) { .ring1,.ring2,.ring3,.ring4,.core { animation: none !important; } }
+  @media (max-width: 480px) {
+    .col { display: block !important; width: 100% !important; }
+    .pad { padding-left: 24px !important; padding-right: 24px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#f2f2f2;font-family:'Archivo',Arial,Helvetica,sans-serif;">
+<div style="display:none;max-height:0;overflow:hidden;">Algo en tu negocio se hace a mano. Todos los días. Lo convertimos en software.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f2f2f2;">
+<tr><td align="center" style="padding:30px 10px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border:1px solid #e3e3e3;">
+
+  <!-- ENCABEZADO -->
+  <tr>
+    <td class="pad" style="padding:22px 40px;border-bottom:1px solid {{negro}};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td valign="middle">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+              <td valign="middle" style="background-color:{{negro}};padding:3px;font-size:0;line-height:0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td style="width:14px;height:14px;background-color:{{negro}};border:2px solid {{rojo}};font-size:0;line-height:0;">&nbsp;</td></tr></table></td>
+              <td style="padding-left:12px;color:{{negro}};font-size:20px;font-weight:800;letter-spacing:-0.5px;">{{empresa}}</td>
+            </tr></table>
+          </td>
+          <td align="right" valign="middle" style="font-family:'Martian Mono','Courier New',monospace;color:#777777;font-size:10px;letter-spacing:1px;text-transform:uppercase;">{{ubicacion}} · UTC−03</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- PORTAL -->
+  <tr>
+    <td style="padding:50px 40px 10px 40px;" align="center">
+      <table role="presentation" class="ring1" cellpadding="0" cellspacing="0" border="0" align="center" style="border:2px solid #f5c2c2;">
+        <tr><td style="padding:14px;">
+          <table role="presentation" class="ring2" cellpadding="0" cellspacing="0" border="0" align="center" style="border:2px solid #ec8a8a;">
+            <tr><td style="padding:12px;">
+              <table role="presentation" class="ring3" cellpadding="0" cellspacing="0" border="0" align="center" style="border:2px solid #e24a4a;">
+                <tr><td style="padding:10px;">
+                  <table role="presentation" class="ring4" cellpadding="0" cellspacing="0" border="0" align="center" style="border:2px solid {{rojo}};">
+                    <tr><td style="padding:9px;">
+                      <table role="presentation" class="core" cellpadding="0" cellspacing="0" border="0" align="center" style="border:4px solid {{negro}};">
+                        <tr><td>
+                          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="background-color:{{negro}};border:8px solid {{rojo}};">
+                            <tr><td style="width:40px;height:40px;line-height:40px;font-size:0;">&nbsp;</td></tr>
+                          </table>
+                        </td></tr>
+                      </table>
+                    </td></tr>
+                  </table>
+                </td></tr>
+              </table>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- TITULAR -->
+  <tr>
+    <td class="pad" style="padding:34px 40px 40px 40px;text-align:center;">
+      <p style="margin:0 0 16px 0;font-family:'Martian Mono','Courier New',monospace;color:{{rojo}};font-size:11px;letter-spacing:2px;text-transform:uppercase;">{{empresa}} independiente · {{anio}}</p>
+      <h1 style="margin:0 0 18px 0;color:{{negro}};font-size:30px;line-height:38px;font-weight:800;letter-spacing:-0.5px;">
+        Algo en tu negocio se hace a mano.<br>Todos los días.<br>
+        <span style="font-family:'Instrument Serif',Georgia,serif;font-style:italic;font-weight:400;color:{{rojo}};font-size:36px;">Lo convertimos en software.</span>
+      </h1>
+      <p style="margin:0;color:#555555;font-size:15px;line-height:24px;">Software a medida y sitios web. Trabajamos con pocos clientes por vez, de principio a fin.</p>
+      <p style="margin:18px 0 0 0;color:{{negro}};font-size:15px;line-height:24px;font-weight:600;">{{lema}}</p>
+    </td>
+  </tr>
+
+  <!-- INTRO -->
+  <tr>
+    <td class="pad" style="padding:0 40px 30px 40px;border-top:1px solid #e3e3e3;">
+      <p style="margin:30px 0 16px 0;color:{{negro}};font-size:16px;line-height:26px;">Hola <strong>{{nombre}}</strong>,</p>
+      <p style="margin:0 0 16px 0;color:#444444;font-size:15px;line-height:25px;">
+        Te escribo desde <strong style="color:{{negro}};">{{empresa}}</strong>. Hacemos sistemas internos, automatizaciones, marcas y sitios web para negocios como <strong style="color:{{negro}};">{{empresaCliente}}</strong>.
+      </p>
+      <p style="margin:0;color:#444444;font-size:15px;line-height:25px;">
+        Si hay una planilla que se completa a mano, dos sistemas que no se hablan o un proceso que depende de que alguien se acuerde, <strong style="color:{{rojo}};">eso es lo que resolvemos</strong>.
+      </p>
+    </td>
+  </tr>
+
+  <!-- QUÉ HACEMOS -->
+  <tr>
+    <td class="pad" style="padding:0 40px 10px 40px;">
+      <p style="margin:0 0 6px 0;font-family:'Martian Mono','Courier New',monospace;color:{{rojo}};font-size:11px;letter-spacing:1px;">02</p>
+      <p style="margin:0 0 18px 0;color:{{negro}};font-size:22px;font-weight:800;">Qué hacemos</p>
+      {{servicios}}
+      <p style="margin:14px 0 0 0;color:#777777;font-size:13px;line-height:20px;">¿Lo que necesitás no está en la lista? Contanos igual. Lo vemos juntos.</p>
+    </td>
+  </tr>
+
+  <!-- EVIDENCIA -->
+  <tr>
+    <td class="pad" style="padding:30px 40px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{{negro}};">
+        <tr><td style="padding:24px 26px 6px 26px;">
+          <p style="margin:0;font-family:'Martian Mono','Courier New',monospace;color:#ff3b30;font-size:11px;letter-spacing:1px;text-transform:uppercase;">05 · Evidencia</p>
+        </td></tr>
+        <tr><td style="padding:10px 16px 22px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td class="col" width="50%" valign="top" style="padding:10px;"><p style="margin:0;color:#ffffff;font-size:30px;font-weight:800;">&lt; 24 h</p><p style="margin:4px 0 0 0;color:#9a9a9a;font-size:12px;line-height:18px;">Lo que tardamos en responder un mensaje</p></td>
+              <td class="col" width="50%" valign="top" style="padding:10px;"><p style="margin:0;color:#ff3b30;font-size:30px;font-weight:800;">1</p><p style="margin:4px 0 0 0;color:#9a9a9a;font-size:12px;line-height:18px;">Proyecto nuevo que tomamos por vez</p></td>
+            </tr>
+            <tr>
+              <td class="col" width="50%" valign="top" style="padding:10px;"><p style="margin:0;color:#ff3b30;font-size:30px;font-weight:800;">6–10</p><p style="margin:4px 0 0 0;color:#9a9a9a;font-size:12px;line-height:18px;">Semanas de un proyecto completo</p></td>
+              <td class="col" width="50%" valign="top" style="padding:10px;"><p style="margin:0;color:#ffffff;font-size:30px;font-weight:800;">100 %</p><p style="margin:4px 0 0 0;color:#9a9a9a;font-size:12px;line-height:18px;">De lo entregado sigue en producción</p></td>
+            </tr>
+          </table>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- CTA -->
+  <tr>
+    <td class="pad" style="padding:10px 40px 40px 40px;text-align:center;">
+      <p style="margin:0 0 10px 0;color:{{negro}};font-size:22px;font-weight:800;">Todo proyecto arrancó con un mensaje.</p>
+      <p style="margin:0 0 26px 0;color:#555555;font-size:15px;line-height:24px;">
+        Contanos qué estás construyendo y por qué te importa.<br>
+        <span style="font-family:'Instrument Serif',Georgia,serif;font-style:italic;font-size:18px;color:{{rojo}};">No hace falta que esté prolijo.</span>
+      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+        <tr><td style="background-color:{{rojo}};">
+          <a href="{{linkContacto}}" style="display:inline-block;padding:16px 34px;font-family:'Martian Mono','Courier New',monospace;color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;letter-spacing:1px;text-transform:uppercase;">Mandar mensaje →</a>
+        </td></tr>
+      </table>
+      <p style="margin:16px 0 0 0;color:#777777;font-size:13px;">o respondé directo este mail · <a href="{{linkWeb}}" style="color:{{negro}};font-weight:600;text-decoration:underline;">Ver la web</a></p>
+    </td>
+  </tr>
+
+  <!-- FIRMA -->
+  <tr>
+    <td class="pad" style="padding:0 40px 32px 40px;border-top:1px solid #e3e3e3;">
+      <p style="margin:26px 0 14px 0;color:#444444;font-size:15px;">Saludos,</p>
+      {{firma}}
+      <p style="margin:14px 0 0 0;color:#777777;font-size:13px;">{{tuEmail}}</p>
+    </td>
+  </tr>
+
+  <!-- PIE -->
+  <tr>
+    <td class="pad" style="background-color:{{negro}};padding:22px 40px;border-top:4px solid {{rojo}};">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td valign="middle">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+              <td style="background-color:{{negro}};border:3px solid {{rojo}};width:10px;height:10px;line-height:10px;font-size:0;">&nbsp;</td>
+              <td style="padding-left:10px;color:#ffffff;font-size:14px;font-weight:800;">{{empresa}}</td>
+            </tr></table>
+          </td>
+          <td align="right" valign="middle" style="font-family:'Martian Mono','Courier New',monospace;color:#cccccc;font-size:11px;line-height:18px;letter-spacing:.5px;">{{hechoEn}}</td>
+        </tr>
+      </table>
+      <p style="margin:14px 0 0 0;color:#8a8a8a;font-size:11px;line-height:17px;">© {{anio}} {{empresa}}. Si no querés recibir más correos, respondé con la palabra "BAJA".</p>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>
+</script>
+
+<script>
+// ---------- Servicios (podés agregar, quitar o editar filas) ----------
+const SERVICIOS = [
+  { titulo: "Software a medida", texto: "Sistemas internos, paneles e integraciones para dejar de cargar cosas a mano.", tiempo: "6–10 sem" },
+  { titulo: "Automatización",    texto: "Que las tareas repetitivas dejen de comerse el día. Flujos, integraciones y alertas.", tiempo: "2–6 sem" },
+  { titulo: "Marca",             texto: "Identidad y sistema visual: no un logo suelto, sino la base de todo lo demás.", tiempo: "3–5 sem" },
+  { titulo: "Ingeniería",        texto: "Sitios y aplicaciones web rápidos, accesibles y fáciles de mantener.", tiempo: "4–8 sem" },
+  { titulo: "Seguridad",         texto: "Revisión de accesos, datos personales, backups y dependencias viejas.", tiempo: "1–3 sem" },
+];
+
+// ---------- Motor (no hace falta tocar) ----------
+function filasServicios() {
+  const mono = "font-family:'Martian Mono','Courier New',monospace;";
+  return SERVICIOS.map((s, i) => {
+    const borde = i === 0 ? `border-top:1px solid ${CONFIG.negro};` : "border-top:1px solid #e3e3e3;";
+    const fin   = i === SERVICIOS.length - 1 ? `border-bottom:1px solid ${CONFIG.negro};` : "";
+    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${borde}${fin}"><tr>
+      <td width="40" valign="top" style="padding:16px 0;${mono}color:${CONFIG.rojo};font-size:12px;">${String(i + 1).padStart(2, "0")}</td>
+      <td valign="top" style="padding:16px 0;"><p style="margin:0 0 4px 0;color:${CONFIG.negro};font-size:16px;font-weight:600;">${s.titulo}</p><p style="margin:0;color:#666666;font-size:13px;line-height:20px;">${s.texto}</p></td>
+      <td width="90" align="right" valign="top" style="padding:16px 0;${mono}color:#777777;font-size:11px;">${s.tiempo}</td>
+    </tr></table>`;
+  }).join("\n");
+}
+
+function filaFirma() {
+  const mono = "font-family:'Martian Mono','Courier New',monospace;";
+  const celdas = CONFIG.socios.map(p => {
+    const wa = "https://wa.me/" + p.telefono.replace(/\D/g, "");
+    return `<td class="col" width="${Math.floor(100 / CONFIG.socios.length)}%" valign="top" style="padding:0 16px 0 0;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td valign="top" style="border-left:3px solid ${CONFIG.rojo};padding:2px 0 2px 12px;">
+          <p style="margin:0;color:${CONFIG.negro};font-size:16px;font-weight:800;">${p.nombre}</p>
+          <p style="margin:3px 0 0 0;${mono}color:${CONFIG.rojo};font-size:11px;letter-spacing:1px;text-transform:uppercase;">${p.rol} · ${CONFIG.empresa}</p>
+          <p style="margin:6px 0 0 0;font-size:13px;"><a href="${wa}" style="color:#555555;text-decoration:none;">${p.telefono}</a></p>
+        </td>
+      </tr></table>
+    </td>`;
+  }).join("");
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${celdas}</tr></table>`;
+}
+
+function armarMail() {
+  const datos = { ...CONFIG, servicios: filasServicios(), firma: filaFirma() };
+  return document.getElementById("plantilla").textContent.trim()
+    .replace(/{{(\w+)}}/g, (m, k) => (k in datos ? datos[k] : m));
+}
+
+const MAIL = armarMail();
+const vista = document.getElementById("vista");
+const asuntoEl = document.getElementById("asuntoTxt");
+asuntoEl.textContent = CONFIG.asunto;
+let editando = true;
+
+// Marca punteada roja al pasar el mouse por un texto editable (no se copia al mail)
+const ESTILO_EDICION = `
+  body[data-editando] p:hover, body[data-editando] h1:hover, body[data-editando] a:hover {
+    outline: 1px dashed rgba(217,0,0,.6); outline-offset: 3px; cursor: text; }`;
+
+function ajustarAltura() {
+  vista.style.height = vista.contentDocument.documentElement.scrollHeight + 40 + "px";
+}
+
+vista.onload = () => {
+  const d = vista.contentDocument;
+  const st = d.createElement("style");
+  st.id = "__edicion"; st.textContent = ESTILO_EDICION;
+  d.head.appendChild(st);
+  d.addEventListener("input", ajustarAltura);
+  aplicarEdicion();
+  ajustarAltura();
+};
+vista.srcdoc = MAIL;
+
+function aplicarEdicion() {
+  const d = vista.contentDocument;
+  d.designMode = editando ? "on" : "off";
+  if (editando) d.body.setAttribute("data-editando", "");
+  else d.body.removeAttribute("data-editando");
+  const b = document.getElementById("btnEditar");
+  b.textContent = editando ? "✏️ Edición: ON" : "✏️ Edición: OFF";
+  b.className = editando ? "" : "alt";
+}
+function toggleEdicion() { editando = !editando; aplicarEdicion(); }
+function restablecer() {
+  if (confirm("¿Descartar los cambios hechos en la vista y volver al texto original?")) {
+    asuntoEl.textContent = CONFIG.asunto;
+    vista.srcdoc = MAIL;
+  }
+}
+
+// Devuelve el HTML final con tus ediciones, sin las herramientas de edición
+function mailActual() {
+  const copia = vista.contentDocument.documentElement.cloneNode(true);
+  const st = copia.querySelector("#__edicion"); if (st) st.remove();
+  copia.querySelector("body").removeAttribute("data-editando");
+  return "<!DOCTYPE html>\n" + copia.outerHTML;
+}
+
+function aviso(t) {
+  const el = document.getElementById("toast");
+  el.textContent = t; el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2500);
+}
+function copiarTexto(txt) {
+  const ta = document.createElement("textarea");
+  ta.value = txt; document.body.appendChild(ta); ta.select();
+  document.execCommand("copy"); ta.remove();
+}
+function copiarAsunto() { copiarTexto(asuntoEl.textContent.trim()); aviso("Asunto copiado"); }
+function copiarHTML()   { copiarTexto(mailActual()); aviso("Código HTML copiado (con tus cambios). Pegalo en Brevo o Mailchimp."); }
+function copiarParaGmail() {
+  const d = vista.contentDocument;
+  d.body.removeAttribute("data-editando");               // saca las marcas de edición
+  const r = d.createRange(), s = d.getSelection();
+  r.selectNodeContents(d.body); s.removeAllRanges(); s.addRange(r);
+  d.execCommand("copy"); s.removeAllRanges();
+  if (editando) d.body.setAttribute("data-editando", "");
+  aviso("Copiado con tus cambios. Pegalo con Ctrl+V en el cuerpo del mail de Gmail.");
+}
+function descargar() {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([mailActual()], { type: "text/html" }));
+  a.download = `mail-${CONFIG.nombre.toLowerCase().replace(/\s+/g, "-")}.html`;
+  a.click();
+}
+</script>
+</body>
+</html>

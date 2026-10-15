@@ -88,7 +88,8 @@ class ProposalWriter:
             "recommended_service": service,
             "recommended_solution": recommended_solution,
             "call_to_action": cta,
-            "signature": f"Saludos,\nEquipo {settings.proposal_brand}",
+            # F8: solo la línea de despedida — el bloque de socios es fijo
+            "signature": "Saludos,",
         }
         html = render_proposal_email(content)
         content["html"] = html

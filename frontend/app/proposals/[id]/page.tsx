@@ -192,8 +192,11 @@ export default function ProposalDetailPage() {
             <textarea className="input min-h-[60px]" value={cta} onChange={(e) => setCta(e.target.value)} />
           </div>
           <div>
-            <label className="label">Firma</label>
+            <label className="label">Línea de despedida</label>
             <textarea className="input min-h-[60px]" value={signature} onChange={(e) => setSignature(e.target.value)} />
+            <p className="text-xs text-taupe mt-1.5">
+              La firma de los socios (nombres, roles y teléfonos) es fija y va siempre debajo — sólo editás esta línea.
+            </p>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setEditing(false)}>Cancelar</Button>

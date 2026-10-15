@@ -231,6 +231,9 @@ class EmailQueueService:
         log_event("email_sent", email_id=email.id, lead_id=email.lead_id, account=account.email)
 
     def _do_send(self, account: EmailAccount, email: Email) -> str:
+        # F8: List-Unsubscribe mailto hacia el contacto de marca configurado;
+        # nunca se inventa uno — sin config, no hay header.
+        unsubscribe_to = settings.proposal_contact_email or None
         if settings.allow_mock_email_sending and not self._has_live_token(account):
             return MockGmailSender().send(
                 to_email=email.to_email,
@@ -238,6 +241,7 @@ class EmailQueueService:
                 subject=email.subject or "",
                 body_html=email.body_html,
                 body_plain=email.body_plain,
+                unsubscribe_email=unsubscribe_to,
             )["id"]
         access_token = self._access_token(account)
         raw = build_raw_message(
@@ -246,6 +250,7 @@ class EmailQueueService:
             subject=email.subject or "",
             body_html=email.body_html,
             body_plain=email.body_plain,
+            unsubscribe_email=unsubscribe_to,
         )
         result = send_message(access_token, raw)
         return result.get("id", "")

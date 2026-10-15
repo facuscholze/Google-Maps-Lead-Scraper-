@@ -1,7 +1,12 @@
-"""Server-side rendering of the email inside nuevo html innblock.html.
+"""Server-side rendering of the email built from nuevo html mail.html.
 
 No JavaScript is executed or sent. All lead/model text is HTML-escaped.
 The packaged template is also available in standalone backend Docker builds.
+
+F8: el diseño de marca es el de `nuevo html mail.html` (ver copia intacta en
+templates/email/innblock_original.html). La firma de los socios está FIJADA
+acá (nombres, roles y teléfonos reales de marca) — la IA/edición humana sólo
+puede cambiar la línea de despedida, jamás el bloque de firmantes.
 """
 from __future__ import annotations
 
@@ -16,6 +21,48 @@ from app.core.config import settings
 from app.services.catalog import AVA_SCHO_SERVICES
 
 _TEMPLATE_PATH = Path(__file__).parent / "templates" / "innblock.html"
+
+# F8: firma de socios tomada EXACTA del CONFIG del original
+# (`nuevo html mail.html`): datos reales de los firmantes, no del lead.
+SOCIOS: list[dict[str, str]] = [
+    {"nombre": "Facundo Scholze", "rol": "Co-fundador", "telefono": "+54 3755 629953"},
+    {"nombre": "Yamall Avalos", "rol": "Co-fundador", "telefono": "+598 95 657 007"},
+]
+
+# Pie del original: banderas + &nbsp; (constantHTML de marca, no texto de lead).
+_HECHO_EN = "🇺🇾 Uruguay &nbsp;·&nbsp; 🇦🇷 Argentina &nbsp;·&nbsp; 🇧🇷 Brasil"
+
+MONO = "font-family:'Martian Mono','Courier New',monospace;"
+ROJO = "#d90000"
+NEGRO = "#070707"
+
+
+def _wa_link(telefono: str) -> str:
+    return "https://wa.me/" + "".join(c for c in telefono if c.isdigit())
+
+
+def _firma_socios_html(brand: str) -> str:
+    """Réplica del `filaFirma()` del generador original: columnas con borde
+    rojo a la izquierda, nombre + rol en mono + teléfono con link wa.me.
+    La clase .col las apila en mobile (media 480px ya existe en el template)."""
+    width = 100 // len(SOCIOS)
+    celdas = "".join(
+        f'<td class="col" width="{width}%" valign="top" style="padding:0 16px 0 0;">'
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
+        f'<td valign="top" style="border-left:3px solid {ROJO};padding:2px 0 2px 12px;">'
+        f'<p style="margin:0;color:{NEGRO};font-size:16px;font-weight:800;">{p["nombre"]}</p>'
+        f'<p style="margin:3px 0 0 0;{MONO}color:{ROJO};font-size:11px;letter-spacing:1px;'
+        f'text-transform:uppercase;">{p["rol"]} · {brand}</p>'
+        f'<p style="margin:6px 0 0 0;font-size:13px;">'
+        f'<a href="{_wa_link(p["telefono"])}" style="color:#555555;text-decoration:none;">{p["telefono"]}</a></p>'
+        "</td></tr></table></td>"
+        for p in SOCIOS
+    )
+    return f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>{celdas}</tr></table>'
+
+
+def _firma_socios_plain(brand: str) -> list[str]:
+    return [f"{p['nombre']} — {p['rol']} · {brand} · {p['telefono']}" for p in SOCIOS]
 
 
 def _esc(value: Any) -> str:
@@ -63,8 +110,9 @@ def render_proposal_email(content: dict[str, Any]) -> str:
     values = {
         "empresa": _esc(settings.proposal_brand),
         "empresaCliente": _esc(content.get("business_name") or "tu negocio"),
-        "ubicacion": "Uruguay · Argentina", "hechoEn": "Uruguay · Argentina · Brasil",
-        "anio": str(datetime.now(timezone.utc).year), "rojo": "#d90000", "negro": "#070707",
+        "ubicacion": "Uruguay · Argentina",
+        "hechoEn": _HECHO_EN,  # constante de marca con &nbsp;/banderas: va raw
+        "anio": str(datetime.now(timezone.utc).year), "rojo": ROJO, "negro": NEGRO,
         "lema": "Diseñamos landing pages y sitios web para presentar tu negocio y facilitar las consultas.",
         "apertura": _paragraphs(content.get("opening")),
         "observacion": _paragraphs(content.get("personalized_observation")),
@@ -81,7 +129,9 @@ def render_proposal_email(content: dict[str, Any]) -> str:
         ),
         "servicios": services,
         "llamadaAccion": _esc(content.get("call_to_action") or "¿Conversamos sobre tu próxima web?"),
-        "firma": _paragraphs(content.get("signature") or f"Saludos,\nEquipo {settings.proposal_brand}"),
+        "firma": _paragraphs(content.get("signature") or "Saludos,"),
+        # F8: bloque de socios SIEMPRE presente (HTML de marca, no texto escapable)
+        "firmaSocios": _firma_socios_html(_esc(settings.proposal_brand)),
         "tuEmail": _esc(settings.proposal_contact_email),
         "linkContacto": _safe_link(settings.proposal_contact_url),
         "linkWeb": _safe_link(settings.proposal_website_url),
@@ -111,7 +161,11 @@ def render_plain_text(content: dict[str, Any]) -> str:
     lines.append("")
     lines.append(content.get("call_to_action") or "")
     lines.append("")
-    lines.append(content.get("signature") or f"Saludos,\nEquipo {settings.proposal_brand}")
+    # F8: despedida + firma fija de socios (paridad con el HTML del original)
+    lines.append(content.get("signature") or "Saludos,")
+    lines.extend(_firma_socios_plain(_esc(settings.proposal_brand)))
+    lines.append(f"Contacto: {settings.proposal_contact_email}" if settings.proposal_contact_email else "")
     lines.append("")
-    lines.append("Si preferís no recibir más mensajes nuestros, simplemente respondé a este correo y lo tendremos en cuenta.")
+    # Opt-out obligatorio, mismo texto que el pie del HTML
+    lines.append('Si no querés recibir más correos, respondé con la palabra "BAJA".')
     return "\n".join(str(line) for line in lines)

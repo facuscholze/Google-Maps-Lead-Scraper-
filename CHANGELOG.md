@@ -4,6 +4,33 @@ Todas las novedades relevantes del rediseño, por fase. Formato: [Keep a Changel
 
 ## [Unreleased]
 
+### Fase 9 — Guardrails de envío y resiliencia del drain (2026-10-15)
+- **Fix central (D9.3): los fallos ya no ciegan correos válidos**. Antes
+  cualquier error durante el drain → FAILED terminal. Ahora tres destinos:
+  cuenta sin cupo/conexión ⇒ email PENDIENTE (QUEDE en QUEUED sin consumir
+  intentos; el próximo tick lo envía), errores deterministas ⇒ FAILED sin
+  reintento, errores transitorios (Gmail/red) ⇒ reintento con backoff
+  aleatorio × intentos hasta `max_send_attempts` (nuevo setting, default 3)
+  con evento RETRY auditado.
+- **Claim atómico anti doble-envío (D9.2)**: QUEUED→PROCESSING como UPDATE
+  condicionado con verificación de rowcount — dos drenadores no pueden
+  enviar el mismo correo.
+- **Correo vacío nunca se encola (D9.1)**: `queue_for_lead` valida contenido
+  renderizable (subject/body) como último guardián, incluso tras aprobación.
+- **Auditoría + tests de lo que ya protegía (D9.4)**: reset diario de cupo
+  por fecha, drain multi-workspace, double-check de suppression entre
+  encolado y envío (nuevo test: baja registrada "mientras espera el delay"
+  frena el correo), leads marcados DO_NOT_CONTACT al cargar la baja,
+  LOW confidence jamás encola. Flujo de baja manual documentado; polling
+  Gmail de respuestas "BAJA" queda pendiente conocido.
+- Tests: `test_send_guardrails.py` (8 nuevos: contenido vacío, cupo=
+  pendiente con recuperación "mañana", sin cuenta/recuperación, retry con
+  backoff y éxito, agotamiento → FAILED, determinista sin reintento, claim
+  atómico x2, suppression entre queue y send) + expectativa corregida del
+  test de límite histórico. **Suite completa 154/154 verde**; E2E vivo:
+  propuesta → aprobación → encolado → scheduler inline envía (mock) con
+  eventos de cola.
+
 ### Fase 8 — Plantilla de email verificada y blindada (2026-10-15)
 - **Auditoría diseño vs. original (D8.1)**: `templates/innblock.html` se
   contrastó contra `nuevo html mail.html`: el sistema de diseño (portal

@@ -149,7 +149,10 @@ def test_daily_limit_enforced_at_send(db_session, workspace, ready_lead):
     queue.send_due(workspace.id, now=now)
     statuses = db_session.execute(select(Email.status)).all()
     assert sum(1 for (s,) in statuses if s == EmailStatus.SENT.value) == 2
-    assert sum(1 for (s,) in statuses if s == EmailStatus.FAILED.value) == 1
+    # F9/D9.3: el tercero queda PENDIENTE (no FAILED) — cupo de cuenta es
+    # transitorio; el módulo test_send_guardrails cubre la recuperación.
+    assert sum(1 for (s,) in statuses if s == EmailStatus.QUEUED.value) == 1
+    assert sum(1 for (s,) in statuses if s == EmailStatus.FAILED.value) == 0
     db_session.refresh(account)
     assert account.sent_today == 2
 

@@ -110,6 +110,9 @@ class Settings(BaseSettings):
     daily_email_limit: int = 5
     min_send_delay_seconds: int = 90
     max_send_delay_seconds: int = 420
+    # F9/D9.3: intentos máximos por email ante fallos transitorios (Gmail/red);
+    # agotados → FAILED terminal. Los fallos de cuenta/cupo NO consumen intentos.
+    max_send_attempts: int = 3
     allowed_hours_start: int = 9
     allowed_hours_end: int = 19
     # Proxies whose X-Forwarded-For we trust for rate limiting / logs.

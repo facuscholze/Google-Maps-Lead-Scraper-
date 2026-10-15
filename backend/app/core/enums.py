@@ -104,6 +104,7 @@ class EmailEventType(str, Enum):
     BOUNCED = "BOUNCED"
     REPLIED = "REPLIED"
     OPTED_OUT = "OPTED_OUT"
+    RETRY = "RETRY"
 
 
 class AccountStatus(str, Enum):

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -47,6 +47,14 @@ logger = logging.getLogger("avascho.queue")
 
 class QueueValidationError(Exception):
     pass
+
+
+class AccountUnavailable(QueueValidationError):
+    """F9: sin cuenta conectada o cuenta sin cupo diario al momento de ENVIAR.
+
+    Es una condición transitoria del entorno — el email queda pendiente (vuelve
+    a QUEUED) y jamás se marca FAILED por esto. No consume intentos de envío.
+    """
 
 
 class EmailQueueService:
@@ -100,6 +108,9 @@ class EmailQueueService:
             raise QueueValidationError("Proposal not found for this lead")
         if proposal.status != ProposalStatus.APPROVED.value:
             raise QueueValidationError("Proposal must be APPROVED before it can be queued")
+        # F9/D9.1: nunca se encola un correo vacío aunque haya sido aprobado
+        if not (proposal.subject or "").strip() or not (proposal.body_html or "").strip():
+            raise QueueValidationError("Proposal has no renderable content (subject/body missing)")
 
         account = self._pick_account(workspace_id, account_id, strategy)
         if account is None and settings.allow_mock_email_sending:
@@ -168,50 +179,98 @@ class EmailQueueService:
 
     # ------------------------------------------------------------- send ------
     def send_due(self, workspace_id: int, now: datetime | None = None) -> int:
-        """Send all due emails for a workspace respecting limits. Returns count."""
+        """Send all due emails for a workspace respecting limits. Returns count.
+
+        F9 — tres destinos distintos según el fallo:
+        - `AccountUnavailable` (sin cuenta / sin cupo diario): el email queda
+          PENDIENTE (vuelve a QUEUED, no consume intentos) y se corta el drain
+          (los siguientes usarían la misma cuenta).
+        - `QueueValidationError` (contenido/estado determinista): FAILED
+          terminal sin reintentos (reintentar no cambia nada).
+        - Cualquier otro error (Gmail, red): reintento con backoff aleatorio
+          multiplicado por los intentos hechos; agotados
+          `settings.max_send_attempts` → FAILED terminal.
+        """
         now = now or utcnow()
         if not self._within_allowed_window(now):
             return 0
         sent = 0
         for email in self.emails.due_emails(workspace_id, now):
             try:
-                self._send_one(workspace_id, email)
-                sent += 1
-            except Exception as exc:  # noqa: BLE001
+                if self._send_one(workspace_id, email):
+                    sent += 1
+            except AccountUnavailable as exc:
+                email.status = EmailStatus.QUEUED.value
+                self.db.add(email)
+                log_event("email_deferred", email_id=email.id, reason=str(exc)[:200])
+                break
+            except QueueValidationError as exc:
                 email.status = EmailStatus.FAILED.value
                 email.error = str(exc)[:1000]
                 self.db.add(email)
                 self.emails.add_event(workspace_id, email.id, EmailEventType.FAILED.value, str(exc)[:300])
-                log_event("email_failed", email_id=email.id, error=str(exc)[:300])
+                log_event("email_failed", email_id=email.id, retryable=False, error=str(exc)[:300])
+            except Exception as exc:  # noqa: BLE001 — fallos transitorios (Gmail/red)
+                if email.attempts < max(1, settings.max_send_attempts):
+                    delay = random.randint(settings.min_send_delay_seconds, settings.max_send_delay_seconds)
+                    email.status = EmailStatus.QUEUED.value
+                    email.scheduled_at = now + timedelta(seconds=delay * max(1, email.attempts))
+                    email.error = str(exc)[:1000]
+                    self.db.add(email)
+                    self.emails.add_event(
+                        workspace_id, email.id, EmailEventType.RETRY.value,
+                        f"intento {email.attempts}/{settings.max_send_attempts}: {str(exc)[:200]}",
+                    )
+                    log_event("email_retry_scheduled", email_id=email.id, attempts=email.attempts)
+                else:
+                    email.status = EmailStatus.FAILED.value
+                    email.error = str(exc)[:1000]
+                    self.db.add(email)
+                    self.emails.add_event(workspace_id, email.id, EmailEventType.FAILED.value, str(exc)[:300])
+                    log_event("email_failed", email_id=email.id, retryable=False, error=str(exc)[:300])
         self.db.commit()
         return sent
 
-    def _send_one(self, workspace_id: int, email: Email) -> None:
-        if email.status != EmailStatus.QUEUED.value:
-            return
+    def _claim_for_send(self, workspace_id: int, email_id: int) -> bool:
+        """F9/D9.2: claim atómico QUEUED → PROCESSING (+1 intento).
+
+        Retorna False si otro drenador ya lo tomó o ya no sigue encolado — el
+        guard contra envíos duplicados es el UPDATE condicionado, no el read.
+        """
+        result = self.db.execute(
+            update(Email)
+            .where(
+                Email.id == email_id,
+                Email.workspace_id == workspace_id,
+                Email.status == EmailStatus.QUEUED.value,
+            )
+            .values(status=EmailStatus.PROCESSING.value, attempts=Email.attempts + 1)
+        )
+        self.db.flush()
+        return result.rowcount == 1
+
+    def _send_one(self, workspace_id: int, email: Email) -> bool:
+        """Intenta enviar un email. True si quedó procesado por ESTA llamada
+        (SENT u OPTED_OUT); False si no estaba disponible para tomar."""
+        if not self._claim_for_send(workspace_id, email.id):
+            return False
+        # refrescar los campos escritos por el claim atómico
+        self.db.refresh(email)
         if self.suppression.is_suppressed(workspace_id, email.to_email):
             email.status = EmailStatus.DO_NOT_CONTACT.value
             self.db.add(email)
             self.emails.add_event(workspace_id, email.id, EmailEventType.OPTED_OUT.value, "suppression list")
-            return
+            return True
         account = self.accounts.get_for_workspace(workspace_id, email.gmail_account_id or 0)
         if account is None or account.status != AccountStatus.CONNECTED.value:
             if settings.allow_mock_email_sending:
                 account = self._mock_account(workspace_id)
             else:
-                raise QueueValidationError("No connected account")
+                raise AccountUnavailable("No connected account")
         if not self._account_available(account, utcnow()):
-            raise QueueValidationError(f"Daily limit reached for {account.email}")
+            raise AccountUnavailable(f"Daily limit reached for {account.email}")
 
-        email.status = EmailStatus.PROCESSING.value
-        email.attempts += 1
-        self.db.add(email)
-        self.db.flush()
-
-        try:
-            message_id = self._do_send(account, email)
-        except Exception as exc:  # noqa: BLE001
-            raise
+        message_id = self._do_send(account, email)
         email.status = EmailStatus.SENT.value
         email.sent_at = utcnow()
         email.message_id = message_id
@@ -229,6 +288,7 @@ class EmailQueueService:
             self.db.add(proposal)
         self.db.flush()
         log_event("email_sent", email_id=email.id, lead_id=email.lead_id, account=account.email)
+        return True
 
     def _do_send(self, account: EmailAccount, email: Email) -> str:
         # F8: List-Unsubscribe mailto hacia el contacto de marca configurado;

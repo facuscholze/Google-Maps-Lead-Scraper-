@@ -126,6 +126,22 @@ export default function ShipmentsPage() {
                     <Send size={13} className="shrink-0 text-accent-foreground" />
                     <span className="truncate text-sm font-semibold">{email.to_email}</span>
                     <StatusChip status={email.status} />
+                    {email.status === "SENT" && email.message_id?.startsWith("mock-") && (
+                      <span
+                        title="Envío simulado: la cuenta no tiene Gmail real conectado (modo demo). Nada salió a internet."
+                        className="rounded border border-amber-300/60 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700"
+                      >
+                        Simulado
+                      </span>
+                    )}
+                    {typeof email.attempts === "number" && email.attempts > 1 && (
+                      <span
+                        title={`Se necesitaron ${email.attempts} intentos (reintentos automáticos tras errores transitorios)`}
+                        className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                      >
+                        {email.attempts} intentos
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">
                     {email.subject ?? "(sin asunto)"}

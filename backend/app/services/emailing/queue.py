@@ -270,13 +270,20 @@ class EmailQueueService:
         if not self._account_available(account, utcnow()):
             raise AccountUnavailable(f"Daily limit reached for {account.email}")
 
-        message_id = self._do_send(account, email)
+        message_id, via_mock = self._do_send(account, email)
         email.status = EmailStatus.SENT.value
         email.sent_at = utcnow()
         email.message_id = message_id
         self.db.add(email)
         self.accounts.bump_sent(account)
-        self.emails.add_event(workspace_id, email.id, EmailEventType.SENT.value)
+        # F10/BUG-08: el fallback al sender mock queda EXPLÍCITO auditado — un
+        # "SENT" simulado jamás puede confundirse con un envío real por Gmail.
+        self.emails.add_event(
+            workspace_id, email.id, EmailEventType.SENT.value,
+            "envío simulado: sender mock (cuenta sin token real)" if via_mock else None,
+        )
+        if via_mock:
+            log_event("email_sent_mock_fallback", email_id=email.id, lead_id=email.lead_id, account=account.email)
 
         lead = self.db.scalar(select(Lead).where(Lead.id == email.lead_id))
         if lead is not None:
@@ -290,7 +297,9 @@ class EmailQueueService:
         log_event("email_sent", email_id=email.id, lead_id=email.lead_id, account=account.email)
         return True
 
-    def _do_send(self, account: EmailAccount, email: Email) -> str:
+    def _do_send(self, account: EmailAccount, email: Email) -> tuple[str, bool]:
+        """F10: devuelve (message_id, via_mock) — el llamador audita si el
+        envío fue simulado (fallback sin token real, BUG-08 explícito)."""
         # F8: List-Unsubscribe mailto hacia el contacto de marca configurado;
         # nunca se inventa uno — sin config, no hay header.
         unsubscribe_to = settings.proposal_contact_email or None
@@ -302,7 +311,7 @@ class EmailQueueService:
                 body_html=email.body_html,
                 body_plain=email.body_plain,
                 unsubscribe_email=unsubscribe_to,
-            )["id"]
+            )["id"], True
         access_token = self._access_token(account)
         raw = build_raw_message(
             to_email=email.to_email,
@@ -313,7 +322,7 @@ class EmailQueueService:
             unsubscribe_email=unsubscribe_to,
         )
         result = send_message(access_token, raw)
-        return result.get("id", "")
+        return result.get("id", ""), False
 
     @staticmethod
     def _has_live_token(account: EmailAccount) -> bool:

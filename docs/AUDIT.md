@@ -377,3 +377,24 @@ cd frontend && npm install && npx tsc --noEmit && npm run build  # OK
 - Referencia searchText (request body): https://developers.google.com/maps/documentation/places/web-service/reference/rest/v1/places/searchText
 - Usage and Billing (field mask → SKU más alto): https://developers.google.com/maps/documentation/places/web-service/usage-and-billing
 - Global pricing list (re-verificar en cada deploy): https://developers.google.com/maps/billing-and-pricing/pricing#places-pricing
+
+---
+
+## Anexo F10 — Estado final de bugs al cierre del rediseño (2026-10-15)
+
+| Bug | Estado | Cierre |
+|-----|--------|--------|
+| BUG-01 (test/script sync template roto) | ✅ Cerrado | Fase 8 (D8.5): script repurposado a preservar el original byte-idéntico; xfail histórico eliminado — suite sin excepciones. |
+| BUG-02 (celery saltea stages 3–6) | ✅ Cerrado | `pipeline.py` corre los stages 3–6 en AMBOS modos (inline y celery); comentario explícito en código y verificado en suite. |
+| BUG-03 (off-by-one días laborales) | ✅ Cerrado | ISO 1–7 real (`isoweekday`), validador en Settings; `test_working_days_iso.py`. |
+| BUG-04 (500 > tope 60 de Text Search) | ✅ Cerrado | Fase 2: grilla de celdas (`geo_grid.py`), estimador por SKU, tope 20/página y 60/celda de Google respetado. |
+| BUG-05 (comparación funnel inválida) | ✅ Cerrado | Comparación corregida en `page.tsx` — ya no compara índice con booleano. |
+| BUG-06 (`map_place` doble) | ✅ Cerrado | El mapeo se ejecuta una sola vez por candidato. |
+| BUG-07 (`robots.read()` síncrono en async) | ✅ Cerrado | **Fase 10**: `_allowed` vuelve async y la red síncrona va a `asyncio.to_thread` (`_load_robots`), cacheada por host. Regression-guard estructural en `test_email_visibility.py`. |
+| BUG-08 (fallback mock silencioso) | ✅ Cerrado | **Fase 10**: el envío simulado queda EXPLÍCITO — evento SENT con detalle "envío simulado: sender mock", `log_event email_sent_mock_fallback`, badge "SIMULADO" en `/shipments` cuando `message_id` empieza con `mock-`. |
+| BUG-09 (sin drenador en modo inline) | ✅ Cerrado | `scheduler.py`: job asyncio cada 45s drena TODOS los workspaces (single drainer; en modo celery el worker con `-B` asume). |
+| BUG-10 (dev.db commiteado) | ✅ Cerrado | Fuera del índice git y en `.gitignore` (verificado: véase historial). |
+
+Deuda conocida aceptada y documentada (NO bloqueante): polling automático de
+respuestas "BAJA" vía Gmail API (hoy la baja se carga manual desde la UI de
+suppression — la regla "siempre chequear suppression" la hace efectiva).

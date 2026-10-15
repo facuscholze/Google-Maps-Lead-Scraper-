@@ -405,6 +405,13 @@ class ConnectUrlResponse(BaseModel):
 
 
 # -------------------------------------------------------------------- emails ---
+class EmailEventOut(ORMModel):
+    """F10: timeline del correo (queue, envíos, reintentos, baja, fallos)."""
+    event_type: str
+    detail: str | None = None
+    occurred_at: datetime
+
+
 class EmailOut(ORMModel):
     id: int
     lead_id: int
@@ -418,7 +425,14 @@ class EmailOut(ORMModel):
     sent_at: datetime | None = None
     error: str | None = None
     message_id: str | None = None
+    # F10: nº de intentos de envío (reintentos transitorios = attempts > 1)
+    attempts: int = 0
     created_at: datetime
+
+
+class EmailDetailOut(EmailOut):
+    """Detalle con el historial de eventos ordenado cronológicamente (F10)."""
+    events: list[EmailEventOut] = []
 
 
 # --------------------------------------------------------------------- jobs ----

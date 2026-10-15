@@ -990,6 +990,66 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * EmailDetailOut
+         * @description Detalle con el historial de eventos ordenado cronológicamente (F10).
+         */
+        EmailDetailOut: {
+            /** Id */
+            id: number;
+            /** Lead Id */
+            lead_id: number;
+            /** Proposal Id */
+            proposal_id?: number | null;
+            /** Gmail Account Id */
+            gmail_account_id?: number | null;
+            /** To Email */
+            to_email: string;
+            /** From Email */
+            from_email?: string | null;
+            /** Subject */
+            subject?: string | null;
+            /** Status */
+            status: string;
+            /** Scheduled At */
+            scheduled_at?: string | null;
+            /** Sent At */
+            sent_at?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Message Id */
+            message_id?: string | null;
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Events
+             * @default []
+             */
+            events: components["schemas"]["EmailEventOut"][];
+        };
+        /**
+         * EmailEventOut
+         * @description F10: timeline del correo (queue, envíos, reintentos, baja, fallos).
+         */
+        EmailEventOut: {
+            /** Event Type */
+            event_type: string;
+            /** Detail */
+            detail?: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+        };
         /** EmailOut */
         EmailOut: {
             /** Id */
@@ -1016,6 +1076,11 @@ export interface components {
             error?: string | null;
             /** Message Id */
             message_id?: string | null;
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts: number;
             /**
              * Created At
              * Format: date-time
@@ -3266,7 +3331,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EmailOut"];
+                    "application/json": components["schemas"]["EmailDetailOut"];
                 };
             };
             /** @description Validation Error */

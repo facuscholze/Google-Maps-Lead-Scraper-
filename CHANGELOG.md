@@ -4,6 +4,27 @@ Todas las novedades relevantes del rediseño, por fase. Formato: [Keep a Changel
 
 ## [Unreleased]
 
+### Fase 10 — Hardening y visibilidad operativa (2026-10-15)
+- **Fallback mock explícito (D10.2, cierra BUG-08)**: los envíos simulados se
+  distinguen en todas las superficies — evento SENT con detalle auditado,
+  `log_event` propio, y badge "SIMULADO" en `/shipments` (`message_id` mock-*).
+  `_do_send` devuelve `(message_id, via_mock)`: la obligación de distinguir
+  vive en la firma del método.
+- **Visibilidad de la cola (D10.1, cierra pendiente F9)**: `EmailOut` expone
+  `attempts`; `GET /emails/{id}` entrega el timeline cronológico de eventos
+  (`EmailDetailOut`). Badge "N intentos" cuando hubo reintentos automáticos.
+- **BUG-07 cerrado (D10.3)**: la decisión robots.txt vuelve async —
+  `robots.read()` corre en `asyncio.to_thread` (caché por host), sin
+  bloquear el event loop. Regression-guard estructural en tests + degradación
+  abierta offline verificada.
+- **AUDIT.md actualizado (D10.5)**: los 10 bugs del arranque figuran con su
+  fase de cierre. Deuda aceptada: polling Gmail de respuestas "BAJA" (hoy
+  manual vía suppression UI; la doble verificación F9 la hace efectiva).
+- Tests: `test_email_visibility.py` (5: fallback mock explícito, sender real
+  sin nota, detalle con attempts+timeline cronológico, BUG-07 estructural,
+  degradación robots offline). **Suite final 159/159 verde**; tsc + build
+  12/12; api-types regenerados.
+
 ### Fase 9 — Guardrails de envío y resiliencia del drain (2026-10-15)
 - **Fix central (D9.3): los fallos ya no ciegan correos válidos**. Antes
   cualquier error durante el drain → FAILED terminal. Ahora tres destinos:

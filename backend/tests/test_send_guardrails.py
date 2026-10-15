@@ -159,7 +159,7 @@ def test_transient_failure_retries_with_backoff_then_succeeds(db_session, worksp
         calls["n"] += 1
         if calls["n"] == 1:
             raise GmailSendError("Gmail 502: backend error")
-        return "ok-id"
+        return ("ok-id", False)
     monkeypatch.setattr(EmailQueueService, "_do_send", flaky)
     monkeypatch.setattr(settings, "max_send_attempts", 3)
 

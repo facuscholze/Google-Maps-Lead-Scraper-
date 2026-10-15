@@ -92,22 +92,29 @@ class HttpFetcher:
     async def close(self) -> None:
         await self._client.aclose()
 
-    def _allowed(self, url: str) -> bool:
+    async def _allowed(self, url: str) -> bool:
         host = host_of(url)
         robots = self._robots.get(host)
         if robots is None:
-            robots = RobotFileParser()
-            robots.set_url(f"https://{host}/robots.txt")
-            try:
-                robots.read()
-            except Exception:  # noqa: BLE001
-                robots = RobotFileParser()  # allow when robots cannot be read
-                robots.parse([])
+            # F10/BUG-07: `robots.read()` hace RED síncrona — jamás dentro del
+            # event loop; va a un thread (y se cachea por host).
+            robots = await asyncio.to_thread(self._load_robots, host)
             self._robots[host] = robots
         return robots.can_fetch("*", url)
 
+    @staticmethod
+    def _load_robots(host: str) -> RobotFileParser:
+        robots = RobotFileParser()
+        robots.set_url(f"https://{host}/robots.txt")
+        try:
+            robots.read()
+        except Exception:  # noqa: BLE001
+            robots = RobotFileParser()  # allow when robots cannot be read
+            robots.parse([])
+        return robots
+
     async def fetch(self, url: str) -> tuple[str, int, str, list[str]]:
-        if not self._allowed(url):
+        if not await self._allowed(url):
             raise CrawlBlockedError(url)
         response = await self._client.get(url)
         html_content = response.text
